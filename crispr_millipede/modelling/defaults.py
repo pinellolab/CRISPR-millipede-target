@@ -1,5 +1,5 @@
-from .CrisprMillipedeModelling import *
-from .models import *
+from .models_processing import *
+from .models_inputs import *
 
 millipede_model_specification_set : Mapping[str, MillipedeModelSpecification] = {
     "per_replicate_per_experiment_models" : MillipedeModelSpecification(

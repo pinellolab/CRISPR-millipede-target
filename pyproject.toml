@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "crispr-millipede"
-version = "0.1.14"
+version = "0.1.21"
 description = ""
 authors = ["Basheer Becerra <bbecerr@outlook.com>"]
 readme = "README.md"
@@ -16,6 +16,7 @@ pandarallel = "^1.6.4"
 typeguard = "^3.0.2"
 pandas = "^1.5.3"
 millipede-regression = "0.1.0"
+seaborn = "^0.11.2"
 crispr-shrinkage = "0.1.63"
 
 [build-system]

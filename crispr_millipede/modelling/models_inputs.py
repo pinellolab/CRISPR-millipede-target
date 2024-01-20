@@ -3,6 +3,9 @@ from dataclasses import dataclass
 from typing import Union, Mapping, List, Tuple
 from enum import Enum
 import pandas as pd
+from millipede import NormalLikelihoodVariableSelector
+from millipede import BinomialLikelihoodVariableSelector
+
 
 @dataclass
 class MillipedeShrinkageInput:

@@ -43,6 +43,7 @@ class MillipedeModelResultVisualizationExperimentalGroup:
                                             model_types: Optional[List[MillipedeModelType]] = None,
                                             experiment_indices: Optional[List[int]]=None,
                                             replicate_indices: Optional[List[int]]=None,
+                                            manual_xlim: Optional[Tuple[int,int]] = None, 
                                             pdf_filename: Optional[str]= None):
        
         pdf: Optional[PdfPages] = None
@@ -68,7 +69,7 @@ class MillipedeModelResultVisualizationExperimentalGroup:
             millipede_model_specification_result_object: Union[MillipedeModelSpecificationSingleMatrixResult, List[MillipedeModelSpecificationSingleMatrixResult], List[List[MillipedeModelSpecificationSingleMatrixResult]]] = millipede_model_specification_result_wrapper.millipede_model_specification_result_input 
             
             # NOTE 03202023: If only a single matrix is provided (i.e. joint model)
-            if isinstance(millipede_model_specification_result_object, MillipedeModelSpecificationSingleMatrixResult):
+            if millipede_model_specification_result_object.__class__.__name__ == "MillipedeModelSpecificationSingleMatrixResult":
                 if experiment_indices != None:
                     print("experiment_indices provided but will not be used as replicates seemed to have been merged")
                 if replicate_indices != None:
@@ -105,6 +106,7 @@ class MillipedeModelResultVisualizationExperimentalGroup:
                                                         presort_pop_label=self.presort_pop_label,
                                                         ctrl_pop_label=self.ctrl_pop_label,
                                                         base_title=base_title,
+                                                        manual_xlim=manual_xlim,
                                                         pdf=pdf)
             # NOTE 03202023: If only a list of matrices is provided
             elif MillipedeModelResultVisualizationExperimentalGroup.__is_list_of_millipede_model_specification_single_matrix_result(millipede_model_specification_result_object): # -> TypeGuard[List[MillipedeModelSpecificationSingleMatrixResult]]
@@ -138,8 +140,8 @@ class MillipedeModelResultVisualizationExperimentalGroup:
                     for model_type_i, model_type in enumerate(model_types):
                         print("Showing results for model_type {}: {}".format(model_type_i, model_type))
                         millipede_model_score_df = millipede_model_specification_result_object_exp.millipede_model_specification_single_matrix_result[model_type].summary.sort_values(by=['PIP'], ascending=False)
-                        print("HERE1")
-                        print(len(self.raw_encodings_editing_freqs_experimental_group.baseline_pop_encoding_editing_freq_avg))
+                        #print("HERE1")
+                        #print(len(self.raw_encodings_editing_freqs_experimental_group.baseline_pop_encoding_editing_freq_avg))
                         baseline_pop_editing_frequency_avg = self.raw_encodings_editing_freqs_experimental_group.baseline_pop_encoding_editing_freq_avg[1][experiment_index]
                         enriched_pop_editing_frequency_avg = self.raw_encodings_editing_freqs_experimental_group.enriched_pop_encoding_editing_freq_avg[1][experiment_index]
                         presort_pop_editing_frequency_avg = self.raw_encodings_editing_freqs_experimental_group.presort_pop_encoding_editing_freq_avg[1][experiment_index]
@@ -160,6 +162,7 @@ class MillipedeModelResultVisualizationExperimentalGroup:
                                                             presort_pop_label=self.presort_pop_label,
                                                             ctrl_pop_label=self.ctrl_pop_label,
                                                             base_title=base_title,
+                                                            manual_xlim=manual_xlim,
                                                             pdf=pdf)
 
 
@@ -201,18 +204,19 @@ class MillipedeModelResultVisualizationExperimentalGroup:
                             print("Showing results for model_type: {}".format(model_type))
 
                             millipede_model_score_df = millipede_model_specification_result_object_exp_rep.millipede_model_specification_single_matrix_result[model_type].summary.sort_values(by=['PIP'], ascending=False)
-                            print("HERE2")
-                            print(len(self.raw_encodings_editing_freqs_experimental_group.baseline_pop_encoding_editing_freq_avg))
-                            baseline_pop_editing_frequency_avg = self.raw_encodings_editing_freqs_experimental_group.baseline_pop_encoding_editing_freq_avg[1][experiment_index][replicate_index] # NOTE 3/20/2023: Unsure if retrieving replice frequencies appropriately.
-                            enriched_pop_editing_frequency_avg = self.raw_encodings_editing_freqs_experimental_group.enriched_pop_encoding_editing_freq_avg[1][experiment_index][replicate_index] # NOTE 3/20/2023: Unsure if retrieving replice frequencies appropriately.
-                            presort_pop_editing_frequency_avg = self.raw_encodings_editing_freqs_experimental_group.presort_pop_encoding_editing_freq_avg[1][experiment_index][replicate_index] # NOTE 3/20/2023: Unsure if retrieving replice frequencies appropriately.
-                            ctrl_pop_editing_frequency_avg = self.raw_encodings_editing_freqs_experimental_group.ctrl_pop_encoding_editing_freq_avg[0][replicate_index] # TODO: Hardcoding to the first provided control, but I guess there could be more?
+                            #print("HERE2")
+                            #print(len(self.raw_encodings_editing_freqs_experimental_group.baseline_pop_encoding_editing_freq_avg))
+                            baseline_pop_editing_frequency_avg = self.raw_encodings_editing_freqs_experimental_group.baseline_pop_encoding_editing_freq_avg[1][experiment_index]#[replicate_index] # NOTE 3/20/2023: Unsure if retrieving replice frequencies appropriately. NOTE 1/18/24: Temporarily removed replicate index since gave error downstream
+                            enriched_pop_editing_frequency_avg = self.raw_encodings_editing_freqs_experimental_group.enriched_pop_encoding_editing_freq_avg[1][experiment_index]#[replicate_index] # NOTE 3/20/2023: Unsure if retrieving replice frequencies appropriately. NOTE 1/18/24: Temporarily removed replicate index since gave error downstream
+                            presort_pop_editing_frequency_avg = self.raw_encodings_editing_freqs_experimental_group.presort_pop_encoding_editing_freq_avg[1][experiment_index]#[replicate_index] # NOTE 3/20/2023: Unsure if retrieving replice frequencies appropriately. NOTE 1/18/24: Temporarily removed replicate index since gave error downstream
+                            ctrl_pop_editing_frequency_avg = self.raw_encodings_editing_freqs_experimental_group.ctrl_pop_encoding_editing_freq_avg[0]#[replicate_index] # TODO: Hardcoding to the first provided control, but I guess there could be more? NOTE 1/18/24: Temporarily removed replicate index since gave error downstream
 
                             experiment_label = experiment_labels[experiment_index]
                             replicate_label = reps_labels[replicate_index]
                             model_type_label=model_type.value
                             base_title = "Specification={}; Experiment={}; Replicate={}; Model={}".format(model_specification_label, experiment_label, replicate_label, model_type_label)
                             self.__plot_millipede_model_wrapper(millipede_model_score_df=millipede_model_score_df, 
+                                                                original_seq=reference_seq, 
                                                                 baseline_pop_editing_frequency_avg=baseline_pop_editing_frequency_avg,
                                                                 enriched_pop_editing_frequency_avg=enriched_pop_editing_frequency_avg,
                                                                 presort_pop_editing_frequency_avg=presort_pop_editing_frequency_avg,
@@ -222,6 +226,7 @@ class MillipedeModelResultVisualizationExperimentalGroup:
                                                                 presort_pop_label=self.presort_pop_label,
                                                                 ctrl_pop_label=self.ctrl_pop_label,
                                                                 base_title=base_title,
+                                                                manual_xlim=manual_xlim,
                                                                 pdf=pdf)
 
             else:
@@ -232,13 +237,13 @@ class MillipedeModelResultVisualizationExperimentalGroup:
            
     @staticmethod
     def __is_list_of_millipede_model_specification_single_matrix_result(val: List[object]) -> TypeGuard[List[MillipedeModelSpecificationSingleMatrixResult]]:
-        return all(isinstance(x, MillipedeModelSpecificationSingleMatrixResult) for x in val)
+        return all(x.__class__.__name__ == "MillipedeModelSpecificationSingleMatrixResult" for x in val)
     
     @staticmethod
     def __is_list_of_list_millipede_model_specification_single_matrix_result(val: List[object]) -> TypeGuard[List[List[MillipedeModelSpecificationSingleMatrixResult]]]:
         if all(isinstance(x, list) for x in val) != True:
             return False
-        return all(isinstance(y, MillipedeModelSpecificationSingleMatrixResult) for x in val for y in x)
+        return all(y.__class__.__name__ == "MillipedeModelSpecificationSingleMatrixResult" for x in val for y in x)
 
     '''
         Define feature dataframe
@@ -321,9 +326,11 @@ class MillipedeModelResultVisualizationExperimentalGroup:
                                     selection_group_index: int, 
                                     overall_group_index: int, 
                                     base_title: Optional[str]=None,
+                                    manual_xlim: Optional[Tuple[int, int]]=None, 
                                     frequency_max: Optional[float]=None, 
                                     frequency_min: Optional[float]=None,
                                     pdf: Optional[PdfPages] = None):
+        
         '''
             3 axes
             axes[0] is the bar plot of per-position mutational frequency
@@ -332,8 +339,10 @@ class MillipedeModelResultVisualizationExperimentalGroup:
         '''
         #scale = 0.5# 0.38
         scale=0.25
-        #fig, axes = plt.subplots(nrows=3, ncols= 1, figsize=(115*scale,20*scale))
-        fig, axes = plt.subplots(nrows=3, ncols= 1, figsize=(30*scale,30*scale)) # TODO ADDED MANUAY 
+        if manual_xlim is None:
+            fig, axes = plt.subplots(nrows=3, ncols= 1, figsize=(115*scale,20*scale))
+        else:
+            fig, axes = plt.subplots(nrows=3, ncols= 1, figsize=((manual_xlim[1]-manual_xlim[0])*scale,30*scale)) # TODO ADDED MANUAY 
         axes[0].tick_params(axis='x', which='major', labelsize=8)
         axes[1].tick_params(axis='x', which='major', labelsize=8)
         axes[2].tick_params(axis='x', which='major', labelsize=8)
@@ -362,12 +371,15 @@ class MillipedeModelResultVisualizationExperimentalGroup:
 
         # Add some text for labels, title and custom x-axis tick labels, etc.
         axes[0].set_ylabel('Editing Frequency')
-        #axes[0].set_xticks([x_to_num[v] for v in x_labels], weight ='bold', labels=[x_to_num[v] for v in x_labels], rotation=45, horizontalalignment='right') TODO MANUALLY REMOVED
+
+        #axes[0].set_xticks([x_to_num[v] for v in x_labels], weight ='bold', labels=[x_to_num[v] for v in x_labels], rotation=45, horizontalalignment='right') #TODO MANUALLY REMOVED
         #axes[0].set_xticklabels()
         #axes[1].set_xticklabels(range(len(xlabels)), rotation=45, horizontalalignment='right')
-        axes[0].set_xlim(0-1, len(x_labels)+1)
+        if manual_xlim is None:
+            axes[0].set_xlim(0-1, len(x_labels)+1)
+        else:
+            axes[0].set_xlim(manual_xlim[0], manual_xlim[1]) # ADDED MANUALLY TODO
         #axes[0].set_ylim(0, 0.05) # ADDED MANUALLY TODO
-        axes[0].set_xlim(200, 250) # ADDED MANUALLY TODO
         #axes[0].grid(which='major') # TODO REMOVED MANUALLY
         axes[0].legend(loc=2)
 
@@ -387,8 +399,10 @@ class MillipedeModelResultVisualizationExperimentalGroup:
         axes[1].set_xticks([x_to_num[v] for v in x_labels], weight ='bold', labels=[x_to_num[v] for v in x_labels], rotation=45, horizontalalignment='right')
         #axes[1].set_xticklabels()
         axes[1].set_ylim(-0.1,1.1)
-        axes[1].set_xlim(0-1, len(x_labels)+1)
-        axes[1].set_xlim(200, 250) # ADDED MANUALLY TODO
+        if manual_xlim is None:
+            axes[1].set_xlim(0-1, len(x_labels)+1)
+        else:
+            axes[1].set_xlim(manual_xlim[0], manual_xlim[1]) # ADDED MANUALLY TODO
         axes[1].axhline(y=0.5, color='black', linestyle='dotted', linewidth=1)
         axes[1].grid(which='major')
         sm = ScalarMappable(cmap=cmap, norm=plt.Normalize(frequency_min_input,frequency_max_input))
@@ -424,8 +438,10 @@ class MillipedeModelResultVisualizationExperimentalGroup:
         # Show column labels on the axes
         axes[2].set_xticks([x_to_num[v] for v in x_labels], weight = 'bold', labels=x_labels, rotation=45, horizontalalignment='right')
         #axes[2].set_xticklabels()
-        axes[2].set_xlim(0-1, len(x_labels)+1)
-        axes[2].set_xlim(200, 250) # ADDED MANUALLY TODO
+        if manual_xlim is None:
+            axes[2].set_xlim(0-1, len(x_labels)+1)
+        else:
+            axes[2].set_xlim(manual_xlim[0], manual_xlim[1]) # ADDED MANUALLY TODO
         axes[2].set_yticks([y_to_num[v] for v in y_labels])
         axes[2].set_yticklabels(y_labels)
         axes[2].grid(which='major')
@@ -460,6 +476,7 @@ class MillipedeModelResultVisualizationExperimentalGroup:
                                        presort_pop_label: Optional[str]=None,
                                        ctrl_pop_label: Optional[str]=None,
                                        base_title: Optional[str]=None,
+                                       manual_xlim: Optional[Tuple[int,int]]=None,
                                        presort_pop_editing_frequency_avg: Optional[pd.Series] = None,
                                        ctrl_pop_editing_frequency_avg: Optional[pd.Series] = None,
                                        pdf: Optional[PdfPages] = None):
@@ -480,6 +497,7 @@ class MillipedeModelResultVisualizationExperimentalGroup:
             selection_group_index = 1,
             overall_group_index = 0,
             frequency_min = 0,
+            manual_xlim=manual_xlim,
             pdf = pdf
         )
 
@@ -497,6 +515,7 @@ class MillipedeModelResultVisualizationExperimentalGroup:
             selection_group_index = 1,
             overall_group_index = 0,
             frequency_min = 0,
+            manual_xlim=manual_xlim,
             pdf = pdf
         )
     

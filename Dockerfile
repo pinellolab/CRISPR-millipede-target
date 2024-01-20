@@ -14,5 +14,7 @@ RUN python3 -m venv ${VENV}
 ENV PATH="${VENV}/bin:$PATH"
 
 # Install from PyPI
+
 RUN pip install --upgrade pip
-RUN pip install crispr-millipede==0.1.21
+RUN pip install --upgrade pip setuptools
+RUN pip install crispr-millipede==0.1.22

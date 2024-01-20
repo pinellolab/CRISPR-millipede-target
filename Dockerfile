@@ -15,4 +15,4 @@ ENV PATH="${VENV}/bin:$PATH"
 
 # Install from PyPI
 RUN pip install --upgrade pip
-RUN pip install crispr-millipede==0.1.19
+RUN pip install crispr-millipede==0.1.21

@@ -17,4 +17,4 @@ ENV PATH="${VENV}/bin:$PATH"
 
 RUN pip install --upgrade pip
 RUN pip install --upgrade pip setuptools
-RUN pip install crispr-millipede==0.1.22
+RUN pip install crispr-millipede==0.1.23

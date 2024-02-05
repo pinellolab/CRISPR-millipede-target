@@ -112,78 +112,87 @@ class MillipedeInputDataExperimentalGroup:
             if experiment_merge_strategy == MillipedeExperimentMergeStrategy.SUM:
                 assert replicate_merge_strategy == MillipedeReplicateMergeStrategy.SUM, "replicate_merge_strategy must be SUM if experiment_merge_strategy is SUM"
             
-            merged_experiment_df_list = []
+
+            #
+            # Process the replicate dataframes:
+            #
+            merged_experiment_df_list: Union[List[pd.DataFrame], List[List[pd.DataFrame]]] = []
             # Iterate through the experiments
             for experiment_index in range(len(enriched_pop_fn_experiment_list)):
                 # Get the enriched_population and baseline_population for the experiment
-                enriched_pop_fn = enriched_pop_fn_experiment_list[experiment_index]
-                baseline_pop_fn = baseline_pop_fn_experiment_list[experiment_index]
+                enriched_pop_exp_fn = enriched_pop_fn_experiment_list[experiment_index]
+                baseline_pop_exp_fn = baseline_pop_fn_experiment_list[experiment_index]
             
             
                 # Iterate through each replicate of the experiment
-                merged_rep_df_list = []
+                exp_merged_rep_df_list = []
                 for rep in reps:
                     '''
                         Check file directories
                     '''
-                    enriched_pop_full_fn_rep = (data_directory + '/' + enriched_pop_fn).format(rep)
-                    baseline_pop_full_fn_rep = (data_directory + '/' + baseline_pop_fn).format(rep)
-                    assert exists(enriched_pop_full_fn_rep), "File not found: {}".format(enriched_pop_full_fn_rep)
-                    assert exists(baseline_pop_full_fn_rep), "File not found: {}".format(baseline_pop_full_fn_rep)
+                    enriched_pop_full_fn_exp_rep = (data_directory + '/' + enriched_pop_exp_fn).format(rep)
+                    baseline_pop_full_fn_exp_rep = (data_directory + '/' + baseline_pop_exp_fn).format(rep)
+                    assert exists(enriched_pop_full_fn_exp_rep), "File not found: {}".format(enriched_pop_full_fn_exp_rep)
+                    assert exists(baseline_pop_full_fn_exp_rep), "File not found: {}".format(baseline_pop_full_fn_exp_rep)
 
                     '''
                         Read in dataframes
                     '''
-                    enriched_pop_rep_df = pd.read_csv(enriched_pop_full_fn_rep, sep='\t').fillna(value=0.0)
-                    enriched_pop_nt_columns = [col for col in enriched_pop_rep_df.columns if ">" in col]
-                    enriched_pop_rep_df = enriched_pop_rep_df[enriched_pop_nt_columns + [enriched_pop_df_reads_colname]]
+                    enriched_pop_exp_rep_df = pd.read_csv(enriched_pop_full_fn_exp_rep, sep='\t').fillna(value=0.0)
+                    enriched_pop_nt_columns = [col for col in enriched_pop_exp_rep_df.columns if ">" in col]
+                    enriched_pop_exp_rep_df = enriched_pop_exp_rep_df[enriched_pop_nt_columns + [enriched_pop_df_reads_colname]]
 
 
-                    baseline_pop_rep_df = pd.read_csv(baseline_pop_full_fn_rep, sep='\t').fillna(value=0.0)
-                    baseline_pop_nt_columns = [col for col in baseline_pop_rep_df.columns if ">" in col]
-                    baseline_pop_rep_df = baseline_pop_rep_df[baseline_pop_nt_columns + [baseline_pop_df_reads_colname]]
+                    baseline_pop_exp_rep_df = pd.read_csv(baseline_pop_full_fn_exp_rep, sep='\t').fillna(value=0.0)
+                    baseline_pop_nt_columns = [col for col in baseline_pop_exp_rep_df.columns if ">" in col]
+                    baseline_pop_exp_rep_df = baseline_pop_exp_rep_df[baseline_pop_nt_columns + [baseline_pop_df_reads_colname]]
 
                     assert set(enriched_pop_nt_columns) == set(baseline_pop_nt_columns), "Nucleotide columns between enriched and baseline dataframes must be equivalent - are these screening the same regions?"
                     nucleotide_ids = enriched_pop_nt_columns
 
                     # Concat the enriched and baseline population dataframes together
-                    merged_rep_df = pd.concat([enriched_pop_rep_df, baseline_pop_rep_df]).groupby(nucleotide_ids, as_index=False).sum()
+                    merged_exp_rep_df: pd.DataFrame = pd.concat([enriched_pop_exp_rep_df, baseline_pop_exp_rep_df]).groupby(nucleotide_ids, as_index=False).sum()
 
                     # filter based on the per_replicate_each_condition_num_cutoff
-                    merged_rep_df = merged_rep_df[merged_rep_df[baseline_pop_df_reads_colname] >= cutoff_specification.per_replicate_each_condition_num_cutoff]
-                    merged_rep_df = merged_rep_df[merged_rep_df[enriched_pop_df_reads_colname] >= cutoff_specification.per_replicate_each_condition_num_cutoff]
-                    merged_rep_df['total_reads'] = merged_rep_df[baseline_pop_df_reads_colname] + merged_rep_df[enriched_pop_df_reads_colname]
+                    merged_exp_rep_df = merged_exp_rep_df[merged_exp_rep_df[baseline_pop_df_reads_colname] >= cutoff_specification.per_replicate_each_condition_num_cutoff]
+                    merged_exp_rep_df = merged_exp_rep_df[merged_exp_rep_df[enriched_pop_df_reads_colname] >= cutoff_specification.per_replicate_each_condition_num_cutoff]
+                    merged_exp_rep_df['total_reads'] = merged_exp_rep_df[baseline_pop_df_reads_colname] + merged_exp_rep_df[enriched_pop_df_reads_colname]
 
                     # filter on total reads based on the per_replicate_all_condition_num_cutoff
-                    total_alleles_pre_filter = merged_rep_df.values.shape[0]
-                    merged_rep_df = merged_rep_df[merged_rep_df["total_reads"] >= cutoff_specification.per_replicate_all_condition_num_cutoff]
+                    total_alleles_pre_filter = merged_exp_rep_df.values.shape[0]
+                    merged_exp_rep_df = merged_exp_rep_df[merged_exp_rep_df["total_reads"] >= cutoff_specification.per_replicate_all_condition_num_cutoff]
                     
                     # Normalize counts
-                    merged_rep_df = self.__normalize_counts(merged_rep_df, enriched_pop_df_reads_colname, baseline_pop_df_reads_colname, nucleotide_ids)
+                    merged_exp_rep_normalized_df = self.__normalize_counts(merged_exp_rep_df, enriched_pop_df_reads_colname, baseline_pop_df_reads_colname, nucleotide_ids)
                     
                     # Add to the replicate list
-                    merged_rep_df_list.append(merged_rep_df)
+                    exp_merged_rep_df_list.append(merged_exp_rep_normalized_df)
                     
                 '''
                     Handle all replicates depending on provided strategy
                 '''
                 # If replicate_merge_strategy is SUM, sum the replicates together 
                 if replicate_merge_strategy == MillipedeReplicateMergeStrategy.SUM:
-                    nucleotide_ids = [col for col in merged_rep_df_list[0].columns if ">" in col]
-                    merged_reps_df = pd.concat(merged_rep_df_list).groupby(nucleotide_ids, as_index=False).sum()
-                    merged_reps_df = merged_reps_df[merged_reps_df["total_reads"] >= cutoff_specification.all_replicate_num_cutoff]
-                    merged_experiment_df_list.append(merged_reps_df)
+                    nucleotide_ids = [col for col in exp_merged_rep_df_list[0].columns if ">" in col]
+                    merged_exp_reps_df: pd.DataFrame = pd.concat(exp_merged_rep_df_list).groupby(nucleotide_ids, as_index=False).sum() 
+                    merged_exp_reps_df: pd.DataFrame = merged_exp_reps_df[merged_exp_reps_df["total_reads"] >= cutoff_specification.all_replicate_num_cutoff] # Filter
+                    merged_experiment_df_list.append(merged_exp_reps_df)
+
+
                 elif replicate_merge_strategy == MillipedeReplicateMergeStrategy.COVARIATE:
                     # DEVELOPER NOTE: Ensure that intercept_postfix between per-replicate and per-experiment are different
-                    merged_reps_df = pd.concat([self.__get_intercept_df(merged_rep_df_list, experiment_id=experiment_index), pd.concat(merged_rep_df_list, ignore_index=True)], axis=1)
-                    merged_experiment_df_list.append(merged_reps_df)
+                    merged_exp_reps_df: pd.DataFrame = pd.concat([self.__get_intercept_df(exp_merged_rep_df_list, experiment_id=experiment_index), pd.concat(exp_merged_rep_df_list, ignore_index=True)], axis=1)
+                    merged_experiment_df_list.append(merged_exp_reps_df)
+
+
                 elif replicate_merge_strategy == MillipedeReplicateMergeStrategy.SEPARATE:
-                    merged_experiment_df_list.append(merged_rep_df_list)
+                    merged_experiment_df_list.append(exp_merged_rep_df_list)
+
                 elif replicate_merge_strategy == MillipedeReplicateMergeStrategy.MODELLED_COMBINED:
                     # TODO: Perform error handling. Double check that each dataframe actually has a WT column
                     # This gets the WT allele from each replicate, as this will be used as the negative for CRISPR-Shrinkage
                     # Set negative counts
-                    wt_allele_rep_df = [merged_rep_df[merged_rep_df[nucleotide_ids].sum(axis=1) == 0] for merged_rep_df in merged_rep_df_list]
+                    wt_allele_rep_df = [merged_rep_df[merged_rep_df[nucleotide_ids].sum(axis=1) == 0] for merged_rep_df in exp_merged_rep_df_list]
                     
                     # Rename the dataframe to differentiate counts between reps
                     wt_allele_rep_df_renamed = []
@@ -210,7 +219,7 @@ class MillipedeInputDataExperimentalGroup:
                     
                     
                     # Get alleles that are mutated
-                    mut_allele_rep_df = [merged_rep_df[merged_rep_df[nucleotide_ids].sum(axis=1) > 0] for merged_rep_df in merged_rep_df_list]
+                    mut_allele_rep_df = [merged_rep_df[merged_rep_df[nucleotide_ids].sum(axis=1) > 0] for merged_rep_df in exp_merged_rep_df_list]
                     
                     # Rename the dataframe to differentiate counts between reps
                     mut_allele_rep_df_renamed = []
@@ -267,9 +276,9 @@ class MillipedeInputDataExperimentalGroup:
                     mut_allele_rep_df_merged_updated["score"] = [observation_guide.LFC_estimate_combined_rescaled for observation_guide in shrinkage_results.adjusted_observation_guides]
                     mut_allele_rep_df_merged_updated["scale_factor"] = [observation_guide.LFC_estimate_combined_std_rescaled/5 for observation_guide in shrinkage_results.adjusted_observation_guides]
 
-                    merged_reps_df = pd.concat([wt_allele_rep_df_merged_updated, mut_allele_rep_df_merged_updated], axis=0)
+                    merged_exp_reps_df = pd.concat([wt_allele_rep_df_merged_updated, mut_allele_rep_df_merged_updated], axis=0)
                     
-                    merged_experiment_df_list.append(merged_reps_df)
+                    merged_experiment_df_list.append(merged_exp_reps_df)
                         
                 # TODO: Any way to make more modular?
                 elif replicate_merge_strategy == MillipedeReplicateMergeStrategy.MODELLED_SEPARATE:
@@ -278,8 +287,8 @@ class MillipedeInputDataExperimentalGroup:
                     # Set negative counts
                     merged_rep_df_list_updated = []
                     for rep_i in reps:
-                        merged_rep_df = merged_rep_df_list[rep_i]
-                        wt_allele_df = merged_rep_df[merged_rep_df[nucleotide_ids].sum(axis=1) == 0]
+                        merged_exp_rep_df = exp_merged_rep_df_list[rep_i]
+                        wt_allele_df = merged_exp_rep_df[merged_exp_rep_df[nucleotide_ids].sum(axis=1) == 0]
 
                         # Rename the dataframe to differentiate counts between reps
                         wt_allele_df_renamed = wt_allele_df.rename(columns={enriched_pop_df_reads_colname: enriched_pop_df_reads_colname+"_rep{}".format(rep_i), baseline_pop_df_reads_colname: baseline_pop_df_reads_colname+"_rep{}".format(rep_i)})
@@ -303,7 +312,7 @@ class MillipedeInputDataExperimentalGroup:
 
 
                         # Get alleles that are mutated
-                        mut_allele_df = merged_rep_df[merged_rep_df[nucleotide_ids].sum(axis=1) > 0]
+                        mut_allele_df = merged_exp_rep_df[merged_exp_rep_df[nucleotide_ids].sum(axis=1) > 0]
 
                         # Rename the dataframe to differentiate counts between reps
                         mut_allele_df_renamed = df.rename(columns={enriched_pop_df_reads_colname: enriched_pop_df_reads_colname+"_rep{}".format(rep_i), baseline_pop_df_reads_colname: baseline_pop_df_reads_colname+"_rep{}".format(rep_i)})
@@ -357,13 +366,15 @@ class MillipedeInputDataExperimentalGroup:
                         mut_allele_df_merged_updated["score"] = [observation_guide.LFC_estimate_combined_rescaled for observation_guide in shrinkage_results.adjusted_observation_guides]
                         mut_allele_df_merged_updated["scale_factor"] = [observation_guide.LFC_estimate_combined_std_rescaled/2 for observation_guide in shrinkage_results.adjusted_observation_guides]
 
-                        merged_reps_df = pd.concat([wt_allele_rep_df_merged_updated, mut_allele_rep_df_merged_updated], axis=0)
+                        merged_exp_reps_df = pd.concat([wt_allele_rep_df_merged_updated, mut_allele_rep_df_merged_updated], axis=0)
                         
-                        merged_rep_df_list_updated.append(merged_reps_df)
+                        merged_rep_df_list_updated.append(merged_exp_reps_df)
                     merged_experiment_df_list.append(merged_rep_df_list_updated)
                 else:
                     raise Exception("Developer error: Unexpected value for MillipedeReplicateMergeStrategy: {}".format(replicate_merge_strategy))
             
+
+
 
             '''
                 Handle all experiments depending on provided strategy
@@ -384,12 +395,23 @@ class MillipedeInputDataExperimentalGroup:
                 data = merged_experiments_df
             elif experiment_merge_strategy == MillipedeExperimentMergeStrategy.COVARIATE:
                 # DEVELOPER NOTE: Ensure that intercept_postfix between per-replicate and per-experiment are different, else there could be overwriting during intercept assignment
-                merged_experiments_df: pd.DataFrame
-                merged_experiments_df = pd.concat([self.__get_intercept_df(merged_experiment_df_list), pd.concat(merged_experiment_df_list, ignore_index=True)], axis=1)
-                merged_experiments_df = merged_experiments_df.fillna(0.0) # TODO 20221021: This is to ensure all intercept values are assigned (since NaNs exist with covariate by experiment) - there is possible if there are other NaN among features that it will be set to 0 unintentionally
-                merged_experiments_df = __add_supporting_columns_partial(encoding_df = merged_experiments_df)
-                merged_experiments_df = merged_experiments_df[merged_experiments_df["total_reads"] > 0] # Ensure non-zero reads to prevent error during modelling
-                data = merged_experiments_df
+                if replicate_merge_strategy in [MillipedeReplicateMergeStrategy.SEPARATE, MillipedeReplicateMergeStrategy.MODELLED_SEPARATE]: # SINGLE MATRIX PER REPLICATE
+                    merged_experiment_df_list: List[List[pd.DataFrame]]
+                    merged_experiments_df: List[pd.DataFrame]
+                    merged_experiments_df = [pd.concat([self.__get_intercept_df(merged_experiment_df_list), pd.concat(merged_experiment_df_i, ignore_index=True)], axis=1) for merged_experiment_df_i in merged_experiment_df_list]
+                    merged_experiments_df = [merged_experiments_df_i.fillna(0.0) for merged_experiments_df_i in merged_experiments_df] # TODO 20221021: This is to ensure all intercept values are assigned (since NaNs exist with covariate by experiment) - there is possible if there are other NaN among features that it will be set to 0 unintentionally
+                    merged_experiments_df = [__add_supporting_columns_partial(encoding_df = merged_experiments_df_i) for merged_experiments_df_i in merged_experiments_df]
+                    merged_experiments_df = [merged_experiments_df_i[merged_experiments_df_i["total_reads"] > 0] for merged_experiments_df_i in merged_experiments_df] # Ensure non-zero reads to prevent error during modelling
+                    data = merged_experiments_df
+                elif replicate_merge_strategy in [MillipedeReplicateMergeStrategy.SUM, MillipedeReplicateMergeStrategy.COVARIATE, MillipedeReplicateMergeStrategy.MODELLED_COMBINED]: # SINGLE MATRIX FOR ALL REPLICATES
+                    merged_experiment_df_list: List[pd.DataFrame]
+                    merged_experiments_df: pd.DataFrame
+                    merged_experiments_df = pd.concat([self.__get_intercept_df(merged_experiment_df_list), pd.concat(merged_experiment_df_list, ignore_index=True)], axis=1)
+                    merged_experiments_df = merged_experiments_df.fillna(0.0) # TODO 20221021: This is to ensure all intercept values are assigned (since NaNs exist with covariate by experiment) - there is possible if there are other NaN among features that it will be set to 0 unintentionally
+                    merged_experiments_df = __add_supporting_columns_partial(encoding_df = merged_experiments_df)
+                    merged_experiments_df = merged_experiments_df[merged_experiments_df["total_reads"] > 0] # Ensure non-zero reads to prevent error during modelling
+                    data = merged_experiments_df
+                    
             elif experiment_merge_strategy == MillipedeExperimentMergeStrategy.SEPARATE:
                 if replicate_merge_strategy in [MillipedeReplicateMergeStrategy.SEPARATE, MillipedeReplicateMergeStrategy.MODELLED_SEPARATE]:
                     merged_experiment_df_list: List[List[pd.DataFrame]]

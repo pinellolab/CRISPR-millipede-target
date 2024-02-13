@@ -643,7 +643,9 @@ class MillipedeModelExperimentalGroup:
         nucleotide_ids = [col for col in full_data_design_matrix.columns if ">" in col] # TODO 20221021 - There needs to be a better way at specifying what the features are
         intercept_columns = [col for col in full_data_design_matrix.columns if "intercept_" in col] 
         model_types: List[MillipedeModelType]= millipede_model_specification.model_types
-        # Iterate through all model types and inference mdoel
+        # Retrieve the custom S value from the specification
+        S = millipede_model_specification.S
+        # Iterate through all model types and inference model
         print("Iterating through all {} provided models: ".format(len(model_types), model_types))
         models: Mapping[MillipedeModelType, Union[NormalLikelihoodVariableSelector, BinomialLikelihoodVariableSelector]] = {}
         for i, model_type in enumerate(millipede_model_specification.model_types):
@@ -656,7 +658,7 @@ class MillipedeModelExperimentalGroup:
                                                                    response_column='score',
                                                                    assumed_columns=intercept_columns,
                                                                    prior='isotropic',
-                                                                   S=1, 
+                                                                   S=S, 
                                                                    tau=0.01,
                                                                    tau_intercept=1.0e-4,
                                                                    precision="double", 
@@ -676,7 +678,7 @@ class MillipedeModelExperimentalGroup:
                                                                                 sigma_scale_factor_column='scale_factor',
                                                                                 assumed_columns=intercept_columns,
                                                                                 prior='isotropic',
-                                                                                S=1, 
+                                                                                S=S, 
                                                                                 tau=0.01,
                                                                                 tau_intercept=1.0e-4,
                                                                                 precision="double", 
@@ -694,7 +696,7 @@ class MillipedeModelExperimentalGroup:
                                                                        response_column=millipede_input_data.enriched_pop_df_reads_colname,
                                                                        total_count_column='total_reads',
                                                                        assumed_columns=intercept_columns,
-                                                                       S=1, 
+                                                                       S=S, 
                                                                        tau=0.01,
                                                                        tau_intercept=1.0e-4,
                                                                        precision="double", 

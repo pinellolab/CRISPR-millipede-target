@@ -107,6 +107,7 @@ class MillipedeModelSpecification:
     experiment_merge_strategy: MillipedeExperimentMergeStrategy
     cutoff_specification: MillipedeCutoffSpecification
     shrinkage_input: Union[MillipedeShrinkageInput, None] = None
+    S: float = 1.0 #S parameter
     
     def validate_merge_strategies(self, replicate_merge_strategy: MillipedeReplicateMergeStrategy, experiment_merge_strategy:MillipedeExperimentMergeStrategy):
         if experiment_merge_strategy == MillipedeExperimentMergeStrategy.SUM:

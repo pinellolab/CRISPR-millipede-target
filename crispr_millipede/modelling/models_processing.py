@@ -501,13 +501,13 @@ class MillipedeInputDataExperimentalGroup:
         total_read_counts = encoding_df['total_reads']
         
         if 'score' not in encoding_df.columns: 
-            encoding_df['score'] = (enriched_read_counts - baseline_read_counts) / total_read_counts 
+            encoding_df['score'] = (enriched_read_counts - baseline_read_counts) / (enriched_read_counts + baseline_read_counts) 
             
         # create scale_factor for normal likelihood model
         #if 'scale_factor' not in encoding_df.columns: 
             #encoding_df['scale_factor'] = 1.0 / np.sqrt(encoding_df['total_reads']) # NOTE: Intentionally keeping the total_reads as the raw to avoid being impact by normalization - this could be subject to change
         if 'scale_factor' not in encoding_df.columns: 
-            encoding_df['scale_factor'] = 1.0 / np.sqrt(encoding_df[enriched_pop_df_reads_colname]) + 1.0 / np.sqrt(encoding_df[baseline_pop_df_reads_colname])  # NOTE: Intentionally keeping the total_reads as the raw to avoid being impact by normalization - this could be subject to change
+            encoding_df['scale_factor'] = (1.0 / np.sqrt(encoding_df[enriched_pop_df_reads_colname])) + (1.0 / np.sqrt(encoding_df[baseline_pop_df_reads_colname]))  # NOTE: Intentionally keeping the total_reads as the raw to avoid being impact by normalization - this could be subject to change
                         
         return encoding_df
     

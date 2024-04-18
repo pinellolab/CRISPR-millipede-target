@@ -647,6 +647,8 @@ class MillipedeModelExperimentalGroup:
         model_types: List[MillipedeModelType]= millipede_model_specification.model_types
         # Iterate through all model types and inference mdoel
         S = millipede_model_specification.S
+        tau = millipede_model_specification.tau
+        tau_intercept = millipede_model_specification.tau_intercept
         print("Iterating through all {} provided models: ".format(len(model_types), model_types))
         models: Mapping[MillipedeModelType, Union[NormalLikelihoodVariableSelector, BinomialLikelihoodVariableSelector]] = {}
         for i, model_type in enumerate(millipede_model_specification.model_types):
@@ -660,8 +662,8 @@ class MillipedeModelExperimentalGroup:
                                                                    assumed_columns=intercept_columns,
                                                                    prior='isotropic',
                                                                    S=S, 
-                                                                   tau=0.01,
-                                                                   tau_intercept=1.0e-4,
+                                                                   tau=tau,
+                                                                   tau_intercept=tau_intercept,
                                                                    precision="double", 
                                                                    device=device.value)
 
@@ -680,8 +682,8 @@ class MillipedeModelExperimentalGroup:
                                                                                 assumed_columns=intercept_columns,
                                                                                 prior='isotropic',
                                                                                 S=S, 
-                                                                                tau=0.01,
-                                                                                tau_intercept=1.0e-4,
+                                                                                tau=tau,
+                                                                                tau_intercept=tau_intercept,
                                                                                 precision="double", 
                                                                                 device=device.value)
 
@@ -698,8 +700,8 @@ class MillipedeModelExperimentalGroup:
                                                                        total_count_column='total_reads',
                                                                        assumed_columns=intercept_columns,
                                                                        S=S, 
-                                                                       tau=0.01,
-                                                                       tau_intercept=1.0e-4,
+                                                                       tau=tau,
+                                                                       tau_intercept=tau_intercept,
                                                                        precision="double", 
                                                                        device=device.value)
 

@@ -15,37 +15,40 @@ def find(s, ch):
 def get_substitution_encoding(aligned_sequence, original_seq, skip_index=0):
     assert len(aligned_sequence) == len(original_seq) # Ensure the aligned sequence (from allele table) is equal size to the reference sequence
     
+
     nucleotides = ["A","C","T","G", "N", "-"] # List of possible nucleotides
     encodings_per_position = []
     mismatch_mappings_per_position = []
     for index in range(0, len(original_seq)): # Iterate through each base and check for substitution
         # TODO Ensure sequences are uppercase
+        # Create array with possible mismatches
         nucleotides_mm = nucleotides[:]
         nucleotides_mm.remove(original_seq[index])
-        mm_encoding = pd.Series([0,0,0,0,0])
+
+        mm_encoding = pd.Series([0,0,0,0,0]) # NOTE: Replace with np.zeros(len(nucleotides_mm))
         if aligned_sequence[index] == original_seq[index]: # If the aligned sequence is same as reference
             pass
-        else:
+        else: # If there is a mismatch, update the encoding vector
             mm_index = nucleotides_mm.index(aligned_sequence[index])
             mm_encoding[mm_index] = 1
         mismatch_mappings_per_position.append(nucleotides_mm)
         encodings_per_position.append(mm_encoding)
 
+    # Create a dataframe from the encodings and the mismatch NT lists
     encodings_per_position_df = pd.DataFrame(encodings_per_position).T
     mismatch_mappings_per_position_df = pd.DataFrame(mismatch_mappings_per_position).T
 
     encodings_per_position_df.columns = list(original_seq)
     mismatch_mappings_per_position_df.columns = list(original_seq)
 
+    # Prepare the encoding annotated features via a MultiIndex of the position, ref, alt, full_change
     mismatch_mappings_per_position_POS_list = np.arange(mismatch_mappings_per_position_df.shape[1]).repeat(mismatch_mappings_per_position_df.shape[0])
     mismatch_mappings_per_position_REF_list = np.asarray(list(original_seq)).repeat(mismatch_mappings_per_position_df.shape[0]).astype(np.object_)
     mismatch_mappings_per_position_ALT_list = mismatch_mappings_per_position_df.T.values.flatten()
     mismatch_mappings_per_position_full_list = mismatch_mappings_per_position_POS_list.astype(np.str_).astype(object)+mismatch_mappings_per_position_REF_list + np.repeat(">", len(mismatch_mappings_per_position_REF_list)) + mismatch_mappings_per_position_ALT_list
     encodings_per_position_list = encodings_per_position_df.T.values.flatten()
-
     
     # Encodings per position DF, mismatch mappings per position DF, encodings per position flattened, mismatch mappings per position flattened, mismatch mapping position in flattened list, mismatch mapping ref in flattened list, mismatch mapping alt in flattened list, all substitutions made
-    
     index = pd.MultiIndex.from_tuples(zip(mismatch_mappings_per_position_full_list, mismatch_mappings_per_position_POS_list, mismatch_mappings_per_position_REF_list, mismatch_mappings_per_position_ALT_list), names=["FullChange", "Position","Ref", "Alt"])
     
     assert len(encodings_per_position_list) == len(index)
@@ -62,7 +65,7 @@ def parse_row(row, original_seq):
     aligned_sequence = row["Aligned_Sequence"]
     reference_sequence = row["Reference_Sequence"]
     insertion_indices = find(reference_sequence, "-")
-    aligned_sequence = ''.join([aligned_sequence[i] for i in range(len(aligned_sequence)) if i not in insertion_indices])
+    aligned_sequence = ''.join([aligned_sequence[i] for i in range(len(aligned_sequence)) if i not in insertion_indices]) # Remove inserted bases from aligned_sequence
     
     assert len(aligned_sequence) == len(original_seq)
     encodings_per_position_series = get_substitution_encoding(aligned_sequence, original_seq)
@@ -123,7 +126,7 @@ class EncodingDataFrames:
             self.population_wt_encoding = None if self.population_wt_df is  None else [df.apply(parse_lambda, axis=1) for df in self.population_wt_df]
 
 
-    def postprocess_encoding(self):
+    def postprocess_encoding(self, guide_edit_positions: List[int], guide_window_halfsize = 3):
         def trim_edges(trim_left=25, trim_right=25):
             # TODO
             pass
@@ -133,6 +136,10 @@ class EncodingDataFrames:
         def add_read_column(original_dfs, encoded_dfs, suffix):
             for i, original_dfs_rep in enumerate(original_dfs):
                 encoded_dfs[i]["#Reads{}".format(suffix)] = original_dfs_rep["#Reads"]
+
+        def denoise_encodingfs(original_dfs, guide_edit_positions: List[int], guide_window_halfsize = 3):
+            pass
+
         def collapse_encodings(encoded_dfs):
             encoded_dfs_collapsed = []
             for encoded_df_rep in encoded_dfs:
@@ -169,6 +176,7 @@ class EncodingDataFrames:
         add_read_column(self.population_target_df, self.population_target_encoding_processed, self.encoding_parameters.population_target_suffix)
         add_read_column(self.population_presort_df, self.population_presort_encoding_processed, self.encoding_parameters.population_presort_suffix)
         add_read_column(self.population_wt_df, self.population_wt_encoding_processed, self.encoding_parameters.wt_suffix)
+        
         
         # Collapse rows with same encodings, sum the reads together.
         self.population_baseline_encoding_processed = collapse_encodings(self.population_baseline_encoding_processed)

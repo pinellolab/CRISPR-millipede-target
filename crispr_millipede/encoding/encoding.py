@@ -15,37 +15,40 @@ def find(s, ch):
 def get_substitution_encoding(aligned_sequence, original_seq, skip_index=0):
     assert len(aligned_sequence) == len(original_seq) # Ensure the aligned sequence (from allele table) is equal size to the reference sequence
     
+
     nucleotides = ["A","C","T","G", "N", "-"] # List of possible nucleotides
     encodings_per_position = []
     mismatch_mappings_per_position = []
     for index in range(0, len(original_seq)): # Iterate through each base and check for substitution
         # TODO Ensure sequences are uppercase
+        # Create array with possible mismatches
         nucleotides_mm = nucleotides[:]
         nucleotides_mm.remove(original_seq[index])
-        mm_encoding = pd.Series([0,0,0,0,0])
+
+        mm_encoding = pd.Series([0,0,0,0,0]) # NOTE: Replace with np.zeros(len(nucleotides_mm))
         if aligned_sequence[index] == original_seq[index]: # If the aligned sequence is same as reference
             pass
-        else:
+        else: # If there is a mismatch, update the encoding vector
             mm_index = nucleotides_mm.index(aligned_sequence[index])
             mm_encoding[mm_index] = 1
         mismatch_mappings_per_position.append(nucleotides_mm)
         encodings_per_position.append(mm_encoding)
 
+    # Create a dataframe from the encodings and the mismatch NT lists
     encodings_per_position_df = pd.DataFrame(encodings_per_position).T
     mismatch_mappings_per_position_df = pd.DataFrame(mismatch_mappings_per_position).T
 
     encodings_per_position_df.columns = list(original_seq)
     mismatch_mappings_per_position_df.columns = list(original_seq)
 
+    # Prepare the encoding annotated features via a MultiIndex of the position, ref, alt, full_change
     mismatch_mappings_per_position_POS_list = np.arange(mismatch_mappings_per_position_df.shape[1]).repeat(mismatch_mappings_per_position_df.shape[0])
     mismatch_mappings_per_position_REF_list = np.asarray(list(original_seq)).repeat(mismatch_mappings_per_position_df.shape[0]).astype(np.object_)
     mismatch_mappings_per_position_ALT_list = mismatch_mappings_per_position_df.T.values.flatten()
     mismatch_mappings_per_position_full_list = mismatch_mappings_per_position_POS_list.astype(np.str_).astype(object)+mismatch_mappings_per_position_REF_list + np.repeat(">", len(mismatch_mappings_per_position_REF_list)) + mismatch_mappings_per_position_ALT_list
     encodings_per_position_list = encodings_per_position_df.T.values.flatten()
-
     
     # Encodings per position DF, mismatch mappings per position DF, encodings per position flattened, mismatch mappings per position flattened, mismatch mapping position in flattened list, mismatch mapping ref in flattened list, mismatch mapping alt in flattened list, all substitutions made
-    
     index = pd.MultiIndex.from_tuples(zip(mismatch_mappings_per_position_full_list, mismatch_mappings_per_position_POS_list, mismatch_mappings_per_position_REF_list, mismatch_mappings_per_position_ALT_list), names=["FullChange", "Position","Ref", "Alt"])
     
     assert len(encodings_per_position_list) == len(index)

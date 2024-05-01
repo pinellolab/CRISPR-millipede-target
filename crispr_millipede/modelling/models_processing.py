@@ -19,6 +19,8 @@ from collections import defaultdict
 
 from .models_inputs import *
 
+from .pydeseq import run_pydeseq2
+
 # TODO 20221019: Include presort in the filtering, so therefore must also take presort fn as input
 @dataclass
 class MillipedeInputDataExperimentalGroup:
@@ -115,6 +117,8 @@ class MillipedeInputDataExperimentalGroup:
 
             #
             # Process the replicate dataframes:
+            # type List[pd.DataFrame] if relicates are combined
+            # type List[List[pd.DataFrame]] if replicates are separate
             #
             merged_experiment_df_list: Union[List[pd.DataFrame], List[List[pd.DataFrame]]] = []
             # Iterate through the experiments
@@ -125,7 +129,9 @@ class MillipedeInputDataExperimentalGroup:
             
             
                 # Iterate through each replicate of the experiment
-                exp_merged_rep_df_list = []
+                # type List[pd.DataFrame] if relicates are combined
+                # type List[List[pd.DataFrame]] if replicates are separate
+                exp_merged_rep_df_list: List[pd.DataFrame] = []
                 for rep in reps:
                     '''
                         Check file directories
@@ -163,7 +169,7 @@ class MillipedeInputDataExperimentalGroup:
                     merged_exp_rep_df = merged_exp_rep_df[merged_exp_rep_df["total_reads"] >= cutoff_specification.per_replicate_all_condition_num_cutoff]
                     
                     # Normalize counts
-                    merged_exp_rep_normalized_df = self.__normalize_counts(merged_exp_rep_df, enriched_pop_df_reads_colname, baseline_pop_df_reads_colname, nucleotide_ids)
+                    merged_exp_rep_normalized_df: pd.DataFrame = self.__normalize_counts(merged_exp_rep_df, enriched_pop_df_reads_colname, baseline_pop_df_reads_colname, nucleotide_ids)
                     
                     # Add to the replicate list
                     exp_merged_rep_df_list.append(merged_exp_rep_normalized_df)
@@ -187,7 +193,9 @@ class MillipedeInputDataExperimentalGroup:
 
                 elif replicate_merge_strategy == MillipedeReplicateMergeStrategy.SEPARATE:
                     merged_experiment_df_list.append(exp_merged_rep_df_list)
-
+                elif replicate_merge_strategy == MillipedeReplicateMergeStrategy.PYDEQ:
+                    merged_exp_reps_df: pd.DataFrame = run_pydeseq2(exp_merged_rep_df_list)
+                    merged_experiment_df_list.append(merged_exp_reps_df)
                 elif replicate_merge_strategy == MillipedeReplicateMergeStrategy.MODELLED_COMBINED:
                     # TODO: Perform error handling. Double check that each dataframe actually has a WT column
                     # This gets the WT allele from each replicate, as this will be used as the negative for CRISPR-Shrinkage
@@ -373,9 +381,6 @@ class MillipedeInputDataExperimentalGroup:
                 else:
                     raise Exception("Developer error: Unexpected value for MillipedeReplicateMergeStrategy: {}".format(replicate_merge_strategy))
             
-
-
-
             '''
                 Handle all experiments depending on provided strategy
             '''
@@ -411,7 +416,6 @@ class MillipedeInputDataExperimentalGroup:
                     merged_experiments_df = __add_supporting_columns_partial(encoding_df = merged_experiments_df)
                     merged_experiments_df = merged_experiments_df[merged_experiments_df["total_reads"] > 0] # Ensure non-zero reads to prevent error during modelling
                     data = merged_experiments_df
-                    
             elif experiment_merge_strategy == MillipedeExperimentMergeStrategy.SEPARATE:
                 if replicate_merge_strategy in [MillipedeReplicateMergeStrategy.SEPARATE, MillipedeReplicateMergeStrategy.MODELLED_SEPARATE]:
                     merged_experiment_df_list: List[List[pd.DataFrame]]

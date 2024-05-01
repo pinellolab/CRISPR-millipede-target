@@ -30,6 +30,8 @@ class MillipedeInputDataExperimentalGroup:
     experiment_labels: List[str]
     reps: List[int]
     millipede_model_specification_set: Mapping[str, MillipedeModelSpecification]
+    wt_normalization: bool
+    total_normalization: bool
                         
     """
         Generates the MillipedeInputData objects provided MillipedeModelSpecifications and other relevant parameters such as filepaths to the data tables, read thresholds, and labels.
@@ -57,7 +59,9 @@ class MillipedeInputDataExperimentalGroup:
             enriched_pop_df_reads_colname=self.enriched_pop_df_reads_colname, 
             baseline_pop_fn_experiment_list=self.baseline_pop_fn_experiment_list, 
             baseline_pop_df_reads_colname=self.baseline_pop_df_reads_colname, 
-            reps=self.reps
+            reps=self.reps,
+            wt_normalization=self.wt_normalization,
+            total_normalization=self.total_normalization
         )
         # This will be the variable containing the final dictionary with input design matrix for all specifications
         millipede_model_specification_set_with_data: Mapping[str, Tuple[MillipedeModelSpecification, MillipedeInputData]] = dict()
@@ -101,7 +105,9 @@ class MillipedeInputDataExperimentalGroup:
                    replicate_merge_strategy:MillipedeReplicateMergeStrategy, 
                    experiment_merge_strategy:MillipedeExperimentMergeStrategy,
                    cutoff_specification: MillipedeCutoffSpecification,
-                   shrinkage_input: Union[MillipedeShrinkageInput, None]) -> MillipedeInputData:
+                   shrinkage_input: Union[MillipedeShrinkageInput, None],
+                   wt_normalization: bool,
+                   total_normalization: bool) -> MillipedeInputData:
         
         with warnings.catch_warnings(record=True) as w:
             warnings.simplefilter("always")
@@ -163,7 +169,7 @@ class MillipedeInputDataExperimentalGroup:
                     merged_exp_rep_df = merged_exp_rep_df[merged_exp_rep_df["total_reads"] >= cutoff_specification.per_replicate_all_condition_num_cutoff]
                     
                     # Normalize counts
-                    merged_exp_rep_normalized_df = self.__normalize_counts(merged_exp_rep_df, enriched_pop_df_reads_colname, baseline_pop_df_reads_colname, nucleotide_ids)
+                    merged_exp_rep_normalized_df = self.__normalize_counts(merged_exp_rep_df, enriched_pop_df_reads_colname, baseline_pop_df_reads_colname, nucleotide_ids, wt_normalization, total_normalization)
                     
                     # Add to the replicate list
                     exp_merged_rep_df_list.append(merged_exp_rep_normalized_df)
@@ -460,11 +466,11 @@ class MillipedeInputDataExperimentalGroup:
                           encoding_df: pd.DataFrame,
                           enriched_pop_df_reads_colname: str,
                           baseline_pop_df_reads_colname: str,
-                          nucleotide_ids: List[str]) -> pd.DataFrame:
+                          nucleotide_ids: List[str],
+                          wt_normalization: bool,
+                          total_normalization: bool) -> pd.DataFrame:
         # TODO 5/15/23: Normalization is set to True always! Make it an input variable. Also, it should directly change the count rather than just the score
         # TODO 5/15/23: Also, allow normalization either by library size or by WT reads. For now, will just do WT reads
-        wt_normalization = True
-        
         
         # Original
         enriched_read_counts = encoding_df[enriched_pop_df_reads_colname]
@@ -482,9 +488,26 @@ class MillipedeInputDataExperimentalGroup:
             enriched_read_counts = enriched_read_counts * (wt_baseline_read_count / wt_enriched_read_count)
             baseline_read_counts = baseline_read_counts
             
+            # Keep raw counts: 
+            encoding_df[enriched_pop_df_reads_colname + "_raw"] = encoding_df[enriched_pop_df_reads_colname]
+            encoding_df[baseline_pop_df_reads_colname + "_raw"] = encoding_df[baseline_pop_df_reads_colname]
+
             encoding_df[enriched_pop_df_reads_colname] = enriched_read_counts
             encoding_df[baseline_pop_df_reads_colname] = baseline_read_counts
         
+        elif total_normalization:  
+            total_enriched_read_count = sum(enriched_read_counts)
+            total_baseline_read_count = sum(baseline_read_counts)
+            
+            enriched_read_counts = enriched_read_counts / total_enriched_read_count
+            baseline_read_counts = baseline_read_counts / total_baseline_read_count
+            
+            # Keep raw counts:
+            encoding_df[enriched_pop_df_reads_colname + "_raw"] = encoding_df[enriched_pop_df_reads_colname]
+            encoding_df[baseline_pop_df_reads_colname + "_raw"] = encoding_df[baseline_pop_df_reads_colname]
+            
+            encoding_df[enriched_pop_df_reads_colname] = enriched_read_counts
+            encoding_df[baseline_pop_df_reads_colname] = baseline_read_counts
         return encoding_df
 
     def __add_supporting_columns(self, 

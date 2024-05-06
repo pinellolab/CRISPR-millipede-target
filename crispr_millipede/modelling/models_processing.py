@@ -193,9 +193,11 @@ class MillipedeInputDataExperimentalGroup:
 
                 elif replicate_merge_strategy == MillipedeReplicateMergeStrategy.SEPARATE:
                     merged_experiment_df_list.append(exp_merged_rep_df_list)
+
                 elif replicate_merge_strategy == MillipedeReplicateMergeStrategy.PYDEQ:
                     merged_exp_reps_df: pd.DataFrame = run_pydeseq2(exp_merged_rep_df_list)
                     merged_experiment_df_list.append(merged_exp_reps_df)
+                
                 elif replicate_merge_strategy == MillipedeReplicateMergeStrategy.MODELLED_COMBINED:
                     # TODO: Perform error handling. Double check that each dataframe actually has a WT column
                     # This gets the WT allele from each replicate, as this will be used as the negative for CRISPR-Shrinkage

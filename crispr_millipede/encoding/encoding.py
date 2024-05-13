@@ -139,7 +139,7 @@ class EncodingDataFrames:
 
         # Remember to consider strand, spotcheck. Use +6 window size for ABE, +13 window size for evoCDA. +6 window peak
         def denoise_encodings(encoded_dfs, guide_edit_positions: List[int] = [], guide_window_halfsize: int = 3):
-            if guide_edit_positions:
+            if len(guide_edit_positions) > 0:
                 encoded_dfs_denoised: List[pd.DataFrame] = []
 
                 # For each replicate encoding
@@ -186,23 +186,28 @@ class EncodingDataFrames:
         self.population_wt_encoding_processed = None if self.population_wt_encoding is None else copy.deepcopy(self.population_wt_encoding)
 
         # Process encodings
+        print("Processing encoding columns")
         process_encoding(self.population_baseline_encoding_processed)
         process_encoding(self.population_target_encoding_processed)
         process_encoding(self.population_presort_encoding_processed)
         process_encoding(self.population_wt_encoding_processed)
 
         # Add read columns to encodings (as a response variable for modelling)
+        print("Adding read column")
         add_read_column(self.population_baseline_df, self.population_baseline_encoding_processed, self.encoding_parameters.population_baseline_suffix)
         add_read_column(self.population_target_df, self.population_target_encoding_processed, self.encoding_parameters.population_target_suffix)
         add_read_column(self.population_presort_df, self.population_presort_encoding_processed, self.encoding_parameters.population_presort_suffix)
         add_read_column(self.population_wt_df, self.population_wt_encoding_processed, self.encoding_parameters.wt_suffix)
         
+        # Denoise encodings
+        print("Performing denoising")
         self.population_baseline_encoding_processed = denoise_encodings(self.population_baseline_encoding_processed, guide_edit_positions, guide_window_halfsize)
         self.population_target_encoding_processed = denoise_encodings(self.population_target_encoding_processed, guide_edit_positions, guide_window_halfsize)
         self.population_presort_encoding_processed = denoise_encodings(self.population_presort_encoding_processed, guide_edit_positions, guide_window_halfsize)
         self.population_wt_encoding_processed = denoise_encodings(self.population_wt_encoding_processed, guide_edit_positions, guide_window_halfsize)
         
         # Collapse rows with same encodings, sum the reads together.
+        print("Collapsing encoding")
         self.population_baseline_encoding_processed = collapse_encodings(self.population_baseline_encoding_processed)
         self.population_target_encoding_processed = collapse_encodings(self.population_target_encoding_processed)
         self.population_presort_encoding_processed = collapse_encodings(self.population_presort_encoding_processed)

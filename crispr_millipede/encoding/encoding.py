@@ -140,6 +140,7 @@ class EncodingDataFrames:
         # Remember to consider strand, spotcheck. Use +6 window size for ABE, +13 window size for evoCDA. +6 window peak
         def denoise_encodings(encoded_dfs, guide_edit_positions: List[int] = [], guide_window_halfsize: int = 3):
             if len(guide_edit_positions) > 0:
+                print(f"Denoising with positions {guide_edit_positions}")
                 encoded_dfs_denoised: List[pd.DataFrame] = []
 
                 # For each replicate encoding
@@ -158,6 +159,7 @@ class EncodingDataFrames:
                     encoded_dfs_denoised.append(encoded_df_rep)
                 return encoded_dfs_denoised
             else:
+                print("Not denoising sample")
                 return encoded_dfs
             
         def collapse_encodings(encoded_dfs):

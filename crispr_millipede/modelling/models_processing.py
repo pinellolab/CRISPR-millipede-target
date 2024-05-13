@@ -32,6 +32,7 @@ class MillipedeInputDataExperimentalGroup:
     millipede_model_specification_set: Mapping[str, MillipedeModelSpecification]
     wt_normalization: bool
     total_normalization: bool
+    sigma_scale_normalized: bool
                         
     """
         Generates the MillipedeInputData objects provided MillipedeModelSpecifications and other relevant parameters such as filepaths to the data tables, read thresholds, and labels.
@@ -61,7 +62,8 @@ class MillipedeInputDataExperimentalGroup:
             baseline_pop_df_reads_colname=self.baseline_pop_df_reads_colname, 
             reps=self.reps,
             wt_normalization=self.wt_normalization,
-            total_normalization=self.total_normalization
+            total_normalization=self.total_normalization,
+            sigma_scale_normalized=self.sigma_scale_normalized
         )
         # This will be the variable containing the final dictionary with input design matrix for all specifications
         millipede_model_specification_set_with_data: Mapping[str, Tuple[MillipedeModelSpecification, MillipedeInputData]] = dict()

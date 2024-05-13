@@ -98,8 +98,6 @@ class EncodingDataFrames:
         self.population_wt_df = None if self.wt_filepaths is None else [read_allele_table(fn) for fn in self.wt_filepaths]
 
     def encode_crispresso_allele_table(self, progress_bar=False, cores=1):
-        
-
         parse_lambda = lambda row: parse_row(row, self.reference_sequence)
         
         if cores > 1:

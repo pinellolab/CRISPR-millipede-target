@@ -34,7 +34,7 @@ class MillipedeInputDataExperimentalGroup:
     total_normalization: bool
     sigma_scale_normalized: bool
     K_enriched: float
-    K_baseline: float
+    K_baseline: float 
                         
     """
         Generates the MillipedeInputData objects provided MillipedeModelSpecifications and other relevant parameters such as filepaths to the data tables, read thresholds, and labels.

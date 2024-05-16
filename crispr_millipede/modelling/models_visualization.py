@@ -395,7 +395,7 @@ class MillipedeModelResultVisualizationExperimentalGroup:
         frequency_min_input = np.min(frequency_scores) if frequency_min == None else frequency_min
 
         rescale = lambda y: (y - frequency_min_input) / (frequency_max_input - frequency_min_input)
-        rects = axes[1].scatter(range(len(enrichment_scores)), enrichment_scores, color = cmap(rescale(frequency_scores)), a=rescale(frequency_scores), s=30)
+        rects = axes[1].scatter(range(len(enrichment_scores)), enrichment_scores, color = cmap(rescale(frequency_scores)), alpha=rescale(frequency_scores), s=30)
         axes[1].set_xticks([x_to_num[v] for v in x_labels], weight ='bold', labels=[x_to_num[v] for v in x_labels], rotation=45, horizontalalignment='right')
         #axes[1].set_xticklabels()
         axes[1].set_ylim(-0.1,1.1)

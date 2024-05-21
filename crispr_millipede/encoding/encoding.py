@@ -138,23 +138,30 @@ class EncodingDataFrames:
                 encoded_dfs[i]["#Reads{}".format(suffix)] = original_dfs_rep["#Reads"]
 
         # Remember to consider strand, spotcheck. Use +6 window size for ABE, +13 window size for evoCDA. +6 window peak
-        def denoise_encodings(encoded_dfs, guide_edit_positions: List[int] = [], guide_window_halfsize: int = 3):
-            if len(guide_edit_positions) > 0:
-                print(f"Denoising with positions {guide_edit_positions}")
+        def denoise_encodings(encoded_dfs, guide_edit_positions: List[int] = [], guide_window_halfsize: int = 3, variant_types: List[Tuple[str, str]] = []):
+            
+            if (len(guide_edit_positions) > 0) or (len(variant_types) > 0): # If guide positions or variant types are provided, proceed with denoising
+                print(f"Denoising with positions {guide_edit_positions} and variant types {variant_types}")
                 encoded_dfs_denoised: List[pd.DataFrame] = []
 
                 # For each replicate encoding
                 for encoded_df_rep in encoded_dfs:
 
                     # Get the positions from the column names
-                    feature_colnames: List[str] = [name for name in list(encoded_df_rep.columns) if "#Reads" not in name]
-                    colname_positions: List[Tuple[int, str]] = [(int(feature[0:feature.index(">")-1]), feature) for feature in feature_colnames] # To find positions to denoise
+                    feature_colnames: List[str] = [name for name in list(encoded_df_rep.columns) if "#Reads" not in name] # List of non-"read" unparsed columns
+                    parse_feature = lambda feature : (int(feature[0:feature.index(">")-1]),feature[feature.index(">")-1:feature.index(">")], feature[feature.index(">")+1:], feature)
+                    colname_features: List[Tuple[int, str, str, str]] = [parse_feature(feature) for feature in feature_colnames] # List of positions
 
                     # Get editable positions - we want to remove variants not in these positions
                     editable_positions: List[int] = [editable_position for guide_edit_position in guide_edit_positions for editable_position in range(guide_edit_position-guide_window_halfsize, guide_edit_position+guide_window_halfsize+1)]
 
-                    # Get index of positions that are NOT editable (since we want to)
-                    noneditable_colnames: List[str] = [colname_position[1] for colname_position in colname_positions if colname_position[0] not in editable_positions]
+                    # Get the features to denoise/remove
+                    noneditable_colnames: List[Tuple[int, str, str, str]] = colname_features
+                    if editable_positions: # Filter by position
+                        noneditable_colnames = [colname_feature for colname_feature in noneditable_colnames if colname_feature[0] not in editable_positions]
+                    if len(variant_types) > 0: # Filter by type
+                        noneditable_colnames = [colname_feature for colname_feature in noneditable_colnames if np.any([(colname_feature[1]==variant_type[0]) and (colname_feature[2]==variant_type[1]) for variant_type in variant_types])]
+
                     encoded_df_rep[noneditable_colnames] = 0
                     encoded_dfs_denoised.append(encoded_df_rep)
                 return encoded_dfs_denoised

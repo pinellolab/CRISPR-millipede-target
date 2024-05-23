@@ -208,6 +208,11 @@ class EncodingDataFrames:
         add_read_column(self.population_presort_df, self.population_presort_encoding_processed, self.encoding_parameters.population_presort_suffix)
         add_read_column(self.population_wt_df, self.population_wt_encoding_processed, self.encoding_parameters.wt_suffix)
         
+        self.population_baseline_encoding_processed_predenoised = copy.deepcopy(self.population_baseline_encoding_processed)
+        self.population_target_encoding_processed_predenoised = copy.deepcopy(self.population_target_encoding_processed)
+        self.population_presort_encoding_processed_predenoised = copy.deepcopy(self.population_presort_encoding_processed)
+        self.population_wt_encoding_processed_predenoised = copy.deepcopy(self.population_wt_encoding_processed)
+
         # Denoise encodings
         print("Performing denoising")
         self.population_baseline_encoding_processed = denoise_encodings(self.population_baseline_encoding_processed, guide_edit_positions, guide_window_halfsize)

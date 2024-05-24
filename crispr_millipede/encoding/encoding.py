@@ -125,7 +125,7 @@ class EncodingDataFrames:
             self.population_wt_encoding = None if self.population_wt_df is  None else [df.apply(parse_lambda, axis=1) for df in self.population_wt_df]
 
 
-    def postprocess_encoding(self, guide_edit_positions: List[int] = [], guide_window_halfsize: int = 3):
+    def postprocess_encoding(self, guide_edit_positions: List[int] = [], guide_window_halfsize: int = 3, variant_types: List[Tuple[str, str]] = []):
         def trim_edges(trim_left=25, trim_right=25):
             # TODO
             pass
@@ -159,9 +159,10 @@ class EncodingDataFrames:
                     if editable_positions: # Filter by position
                         noneditable_colnames = [colname_feature for colname_feature in noneditable_colnames if colname_feature[0] not in editable_positions]
                     if len(variant_types) > 0: # Filter by type
-                        noneditable_colnames = [colname_feature for colname_feature in noneditable_colnames if np.any([(colname_feature[1]==variant_type[0]) and (colname_feature[2]==variant_type[1]) for variant_type in variant_types])]
-
-                    encoded_df_rep[noneditable_colnames] = 0
+                        noneditable_colnames = [colname_feature for colname_feature in noneditable_colnames if np.any([(colname_feature[1]!=variant_type[0]) or (colname_feature[2]!=variant_type[1]) for variant_type in variant_types])]
+                    noneditable_features = [colname_tuple[3] for colname_tuple in noneditable_colnames]
+                    
+                    encoded_df_rep[noneditable_features] = 0
                     encoded_dfs_denoised.append(encoded_df_rep)
                 return encoded_dfs_denoised
             else:
@@ -214,10 +215,10 @@ class EncodingDataFrames:
 
         # Denoise encodings
         print("Performing denoising")
-        self.population_baseline_encoding_processed = denoise_encodings(self.population_baseline_encoding_processed, guide_edit_positions, guide_window_halfsize)
-        self.population_target_encoding_processed = denoise_encodings(self.population_target_encoding_processed, guide_edit_positions, guide_window_halfsize)
-        self.population_presort_encoding_processed = denoise_encodings(self.population_presort_encoding_processed, guide_edit_positions, guide_window_halfsize)
-        self.population_wt_encoding_processed = denoise_encodings(self.population_wt_encoding_processed, guide_edit_positions, guide_window_halfsize)
+        self.population_baseline_encoding_processed = denoise_encodings(self.population_baseline_encoding_processed, guide_edit_positions, guide_window_halfsize, variant_types)
+        self.population_target_encoding_processed = denoise_encodings(self.population_target_encoding_processed, guide_edit_positions, guide_window_halfsize, variant_types)
+        self.population_presort_encoding_processed = denoise_encodings(self.population_presort_encoding_processed, guide_edit_positions, guide_window_halfsize, variant_types)
+        self.population_wt_encoding_processed = denoise_encodings(self.population_wt_encoding_processed, guide_edit_positions, guide_window_halfsize, []) # NOTE: Passing no variant types for WT sample
         
         # Collapse rows with same encodings, sum the reads together.
         print("Collapsing encoding")

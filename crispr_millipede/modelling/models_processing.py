@@ -34,6 +34,9 @@ class MillipedeInputDataExperimentalGroup:
     millipede_model_specification_set: Mapping[str, MillipedeModelSpecification]
     wt_normalization: bool
     total_normalization: bool
+    sigma_scale_normalized: bool
+    K_enriched: float
+    K_baseline: float 
                         
     """
         Generates the MillipedeInputData objects provided MillipedeModelSpecifications and other relevant parameters such as filepaths to the data tables, read thresholds, and labels.
@@ -63,7 +66,10 @@ class MillipedeInputDataExperimentalGroup:
             baseline_pop_df_reads_colname=self.baseline_pop_df_reads_colname, 
             reps=self.reps,
             wt_normalization=self.wt_normalization,
-            total_normalization=self.total_normalization
+            total_normalization=self.total_normalization,
+            sigma_scale_normalized=self.sigma_scale_normalized,
+            K_enriched=self.K_enriched,
+            K_baseline=self.K_baseline
         )
         # This will be the variable containing the final dictionary with input design matrix for all specifications
         millipede_model_specification_set_with_data: Mapping[str, Tuple[MillipedeModelSpecification, MillipedeInputData]] = dict()
@@ -109,7 +115,10 @@ class MillipedeInputDataExperimentalGroup:
                    cutoff_specification: MillipedeCutoffSpecification,
                    shrinkage_input: Union[MillipedeShrinkageInput, None],
                    wt_normalization: bool,
-                   total_normalization: bool) -> MillipedeInputData:
+                   total_normalization: bool,
+                   sigma_scale_normalized: bool,
+                   K_enriched: float,
+                   K_baseline: float) -> MillipedeInputData:
         
         with warnings.catch_warnings(record=True) as w:
             warnings.simplefilter("always")
@@ -394,7 +403,10 @@ class MillipedeInputDataExperimentalGroup:
             '''
             __add_supporting_columns_partial = partial(self.__add_supporting_columns,
                                                        enriched_pop_df_reads_colname=enriched_pop_df_reads_colname,                               
-                                                       baseline_pop_df_reads_colname= baseline_pop_df_reads_colname
+                                                       baseline_pop_df_reads_colname= baseline_pop_df_reads_colname,
+                                                       sigma_scale_normalized= sigma_scale_normalized,
+                                                       K_enriched=K_enriched,
+                                                       K_baseline=K_baseline
                                                       )
             
             data = None
@@ -514,12 +526,19 @@ class MillipedeInputDataExperimentalGroup:
             
             encoding_df[enriched_pop_df_reads_colname] = enriched_read_counts
             encoding_df[baseline_pop_df_reads_colname] = baseline_read_counts
+        else:
+            encoding_df[enriched_pop_df_reads_colname + "_raw"] = encoding_df[enriched_pop_df_reads_colname]
+            encoding_df[baseline_pop_df_reads_colname + "_raw"] = encoding_df[baseline_pop_df_reads_colname]
+        
         return encoding_df
 
     def __add_supporting_columns(self, 
                                  encoding_df: pd.DataFrame, 
                                  enriched_pop_df_reads_colname: str, 
-                                 baseline_pop_df_reads_colname: str
+                                 baseline_pop_df_reads_colname: str,
+                                 sigma_scale_normalized: bool,
+                                 K_enriched: float,
+                                 K_baseline: float
                                 ) -> pd.DataFrame:
         # construct the simplest possible continuous-valued response variable.
         # this response variable is in [-1, 1]
@@ -536,7 +555,10 @@ class MillipedeInputDataExperimentalGroup:
         #if 'scale_factor' not in encoding_df.columns: 
             #encoding_df['scale_factor'] = 1.0 / np.sqrt(encoding_df['total_reads']) # NOTE: Intentionally keeping the total_reads as the raw to avoid being impact by normalization - this could be subject to change
         if 'scale_factor' not in encoding_df.columns: 
-            encoding_df['scale_factor'] = (1.0 / np.sqrt(encoding_df[enriched_pop_df_reads_colname])) + (1.0 / np.sqrt(encoding_df[baseline_pop_df_reads_colname]))  # NOTE: Intentionally keeping the total_reads as the raw to avoid being impact by normalization - this could be subject to change
+            if sigma_scale_normalized:
+                encoding_df['scale_factor'] = (K_enriched / np.sqrt(encoding_df[enriched_pop_df_reads_colname])) + (K_baseline / np.sqrt(encoding_df[baseline_pop_df_reads_colname]))  # NOTE: Intentionally keeping the total_reads as the raw to avoid being impact by normalization - this could be subject to change
+            else:
+                encoding_df['scale_factor'] = (K_enriched / np.sqrt(encoding_df[enriched_pop_df_reads_colname + "_raw"])) + (K_baseline / np.sqrt(encoding_df[baseline_pop_df_reads_colname + "_raw"]))  # NOTE: Intentionally keeping the total_reads as the raw to avoid being impact by normalization - this could be subject to change
                         
         return encoding_df
     

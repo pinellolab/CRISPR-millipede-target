@@ -2,7 +2,7 @@ import pandas as pd
 import numpy as np
 from pandarallel import pandarallel
 from dataclasses import dataclass
-from typing import List, Optional
+from typing import List, Optional, Tuple
 from functools import reduce
 import copy
 
@@ -65,7 +65,7 @@ def parse_row(row, original_seq):
     aligned_sequence = row["Aligned_Sequence"]
     reference_sequence = row["Reference_Sequence"]
     insertion_indices = find(reference_sequence, "-")
-    aligned_sequence = ''.join([aligned_sequence[i] for i in range(len(aligned_sequence)) if i not in insertion_indices])
+    aligned_sequence = ''.join([aligned_sequence[i] for i in range(len(aligned_sequence)) if i not in insertion_indices]) # Remove inserted bases from aligned_sequence
     
     assert len(aligned_sequence) == len(original_seq)
     encodings_per_position_series = get_substitution_encoding(aligned_sequence, original_seq)
@@ -100,9 +100,8 @@ class EncodingDataFrames:
         self.population_presort_df = None if self.population_presort_filepaths is None else [read_allele_table(fn) for fn in self.population_presort_filepaths]
         self.population_wt_df = None if self.wt_filepaths is None else [read_allele_table(fn) for fn in self.wt_filepaths]
 
-    def encode_crispresso_allele_table(self, progress_bar=False, cores=1):
-        
 
+    def encode_crispresso_allele_table(self, progress_bar=False, cores=1):
         parse_lambda = lambda row: parse_row(row, self.reference_sequence)
         
         if cores > 1:
@@ -126,7 +125,7 @@ class EncodingDataFrames:
             self.population_wt_encoding = None if self.population_wt_df is  None else [df.apply(parse_lambda, axis=1) for df in self.population_wt_df]
 
 
-    def postprocess_encoding(self):
+    def postprocess_encoding(self, guide_edit_positions: List[int] = [], guide_window_halfsize: int = 3, variant_types: List[Tuple[str, str]] = []):
         def trim_edges(trim_left=25, trim_right=25):
             # TODO
             pass
@@ -136,12 +135,46 @@ class EncodingDataFrames:
         def add_read_column(original_dfs, encoded_dfs, suffix):
             for i, original_dfs_rep in enumerate(original_dfs):
                 encoded_dfs[i]["#Reads{}".format(suffix)] = original_dfs_rep["#Reads"]
+
+        # Remember to consider strand, spotcheck. Use +6 window size for ABE, +13 window size for evoCDA. +6 window peak
+        def denoise_encodings(encoded_dfs, guide_edit_positions: List[int] = [], guide_window_halfsize: int = 3, variant_types: List[Tuple[str, str]] = []):
+            
+            if (len(guide_edit_positions) > 0) or (len(variant_types) > 0): # If guide positions or variant types are provided, proceed with denoising
+                print(f"Denoising with positions {guide_edit_positions} and variant types {variant_types}")
+                encoded_dfs_denoised: List[pd.DataFrame] = []
+
+                # For each replicate encoding
+                for encoded_df_rep in encoded_dfs:
+
+                    # Get the positions from the column names
+                    feature_colnames: List[str] = [name for name in list(encoded_df_rep.columns) if "#Reads" not in name] # List of non-"read" unparsed columns
+                    parse_feature = lambda feature : (int(feature[0:feature.index(">")-1]),feature[feature.index(">")-1:feature.index(">")], feature[feature.index(">")+1:], feature)
+                    colname_features: List[Tuple[int, str, str, str]] = [parse_feature(feature) for feature in feature_colnames] # List of positions
+
+                    # Get editable positions - we want to remove variants not in these positions
+                    editable_positions: List[int] = [editable_position for guide_edit_position in guide_edit_positions for editable_position in range(guide_edit_position-guide_window_halfsize, guide_edit_position+guide_window_halfsize+1)]
+
+                    # Get the features to denoise/remove
+                    if editable_positions: # Filter by position
+                        noneditable_colnames_position = [colname_feature[3] for colname_feature in colname_features if colname_feature[0] not in editable_positions]  # select positions that do not contain position
+                        encoded_df_rep[noneditable_colnames_position] = 0
+                    if len(variant_types) > 0: # Filter by type
+                        noneditable_colnames_variants = [colname_feature[3] for colname_feature in colname_features if np.any([(colname_feature[1]!=variant_type[0]) or (colname_feature[2]!=variant_type[1]) for variant_type in variant_types])] # Select features that does not contain a variant type
+                        encoded_df_rep[noneditable_colnames_variants] = 0
+                    
+                    encoded_dfs_denoised.append(encoded_df_rep)
+                return encoded_dfs_denoised
+            else:
+                print("Not denoising sample")
+                return encoded_dfs
+            
         def collapse_encodings(encoded_dfs):
             encoded_dfs_collapsed = []
             for encoded_df_rep in encoded_dfs:
                 feature_colnames = [name for name in list(encoded_df_rep.columns) if "#Reads" not in name]
                 encoded_dfs_collapsed.append(encoded_df_rep.groupby(feature_colnames, as_index=True).sum().reset_index())
             return encoded_dfs_collapsed
+        
         def merge_conditions_by_rep(first_encodings_collapsed, second_encodings_collapsed, third_encodings_collapsed):
             assert len(first_encodings_collapsed) == len(second_encodings_collapsed) == len(third_encodings_collapsed)
             encoded_dfs_merged = []
@@ -154,7 +187,6 @@ class EncodingDataFrames:
                 encoded_dfs_merged.append(df_encoding_rep1)
             return encoded_dfs_merged
         
-
         # Deep copy encodings
         self.population_baseline_encoding_processed = None if self.population_baseline_encoding is None else copy.deepcopy(self.population_baseline_encoding)
         self.population_target_encoding_processed = None if self.population_target_encoding is None else copy.deepcopy(self.population_target_encoding)
@@ -162,18 +194,33 @@ class EncodingDataFrames:
         self.population_wt_encoding_processed = None if self.population_wt_encoding is None else copy.deepcopy(self.population_wt_encoding)
 
         # Process encodings
+        print("Processing encoding columns")
         process_encoding(self.population_baseline_encoding_processed)
         process_encoding(self.population_target_encoding_processed)
         process_encoding(self.population_presort_encoding_processed)
         process_encoding(self.population_wt_encoding_processed)
 
         # Add read columns to encodings (as a response variable for modelling)
+        print("Adding read column")
         add_read_column(self.population_baseline_df, self.population_baseline_encoding_processed, self.encoding_parameters.population_baseline_suffix)
         add_read_column(self.population_target_df, self.population_target_encoding_processed, self.encoding_parameters.population_target_suffix)
         add_read_column(self.population_presort_df, self.population_presort_encoding_processed, self.encoding_parameters.population_presort_suffix)
         add_read_column(self.population_wt_df, self.population_wt_encoding_processed, self.encoding_parameters.wt_suffix)
         
+        self.population_baseline_encoding_processed_predenoised = copy.deepcopy(self.population_baseline_encoding_processed)
+        self.population_target_encoding_processed_predenoised = copy.deepcopy(self.population_target_encoding_processed)
+        self.population_presort_encoding_processed_predenoised = copy.deepcopy(self.population_presort_encoding_processed)
+        self.population_wt_encoding_processed_predenoised = copy.deepcopy(self.population_wt_encoding_processed)
+
+        # Denoise encodings
+        print("Performing denoising")
+        self.population_baseline_encoding_processed = denoise_encodings(self.population_baseline_encoding_processed, guide_edit_positions, guide_window_halfsize, variant_types)
+        self.population_target_encoding_processed = denoise_encodings(self.population_target_encoding_processed, guide_edit_positions, guide_window_halfsize, variant_types)
+        self.population_presort_encoding_processed = denoise_encodings(self.population_presort_encoding_processed, guide_edit_positions, guide_window_halfsize, variant_types)
+        self.population_wt_encoding_processed = denoise_encodings(self.population_wt_encoding_processed, guide_edit_positions, guide_window_halfsize, []) # NOTE: Passing no variant types for WT sample
+        
         # Collapse rows with same encodings, sum the reads together.
+        print("Collapsing encoding")
         self.population_baseline_encoding_processed = collapse_encodings(self.population_baseline_encoding_processed)
         self.population_target_encoding_processed = collapse_encodings(self.population_target_encoding_processed)
         self.population_presort_encoding_processed = collapse_encodings(self.population_presort_encoding_processed)

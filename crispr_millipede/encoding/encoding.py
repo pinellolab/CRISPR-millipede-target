@@ -155,14 +155,13 @@ class EncodingDataFrames:
                     editable_positions: List[int] = [editable_position for guide_edit_position in guide_edit_positions for editable_position in range(guide_edit_position-guide_window_halfsize, guide_edit_position+guide_window_halfsize+1)]
 
                     # Get the features to denoise/remove
-                    noneditable_colnames: List[Tuple[int, str, str, str]] = colname_features
                     if editable_positions: # Filter by position
-                        noneditable_colnames = [colname_feature for colname_feature in noneditable_colnames if colname_feature[0] not in editable_positions]
+                        noneditable_colnames_position = [colname_feature[3] for colname_feature in colname_features if colname_feature[0] not in editable_positions]  # select positions that do not contain position
+                        encoded_df_rep[noneditable_colnames_position] = 0
                     if len(variant_types) > 0: # Filter by type
-                        noneditable_colnames = [colname_feature for colname_feature in noneditable_colnames if np.any([(colname_feature[1]!=variant_type[0]) or (colname_feature[2]!=variant_type[1]) for variant_type in variant_types])]
-                    noneditable_features = [colname_tuple[3] for colname_tuple in noneditable_colnames]
+                        noneditable_colnames_variants = [colname_feature[3] for colname_feature in colname_features if np.any([(colname_feature[1]!=variant_type[0]) or (colname_feature[2]!=variant_type[1]) for variant_type in variant_types])] # Select features that does not contain a variant type
+                        encoded_df_rep[noneditable_colnames_variants] = 0
                     
-                    encoded_df_rep[noneditable_features] = 0
                     encoded_dfs_denoised.append(encoded_df_rep)
                 return encoded_dfs_denoised
             else:

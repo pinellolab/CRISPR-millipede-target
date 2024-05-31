@@ -19,6 +19,27 @@ from collections import defaultdict
 
 from .models_inputs import *
 
+"""
+    Helper function for filtering the columns of an input design matrix
+"""
+def filter_columns_by_variant_frequency(input_design_df: pd.DataFrame, millipede_cutoff_specification: MillipedeCutoffSpecification) -> pd.DataFrame:
+    # Get columns (both nucleotide columns for filtering, and non-nucleotide columns to add back in later)
+    nucleotide_ids = [col for col in input_design_df.columns if ">"  in col]
+    non_nucleotide_ids = [col for col in input_design_df.columns if ">" not in col]
+
+    # Calculate the variant frequency for each nucleotide column
+    variant_reads = input_design_df.loc[:, nucleotide_ids].mul(input_design_df["total_reads"], axis=0).sum(axis=0)
+    variant_af = variant_reads.astype(float).mul(1./input_design_df["total_reads"].sum())
+    variant_af[variant_af.isna()] = 0
+
+    # Perform filtering based on variant frequency
+    selected_nucleotide_ids = variant_af[variant_af>=millipede_cutoff_specification.column_removal_proportion].index
+    new_design_columns = selected_nucleotide_ids.append(pd.Index(non_nucleotide_ids))
+    input_design_df = input_design_df.loc[:, new_design_columns]               
+
+    return input_design_df
+
+
 # TODO 20221019: Include presort in the filtering, so therefore must also take presort fn as input
 @dataclass
 class MillipedeInputDataExperimentalGroup:
@@ -35,7 +56,8 @@ class MillipedeInputDataExperimentalGroup:
     sigma_scale_normalized: bool
     K_enriched: float
     K_baseline: float 
-                        
+
+
     """
         Generates the MillipedeInputData objects provided MillipedeModelSpecifications and other relevant parameters such as filepaths to the data tables, read thresholds, and labels.
     """
@@ -137,7 +159,6 @@ class MillipedeInputDataExperimentalGroup:
                 # Get the enriched_population and baseline_population for the experiment
                 enriched_pop_exp_fn = enriched_pop_fn_experiment_list[experiment_index]
                 baseline_pop_exp_fn = baseline_pop_fn_experiment_list[experiment_index]
-            
             
                 # Iterate through each replicate of the experiment
                 exp_merged_rep_df_list = []
@@ -402,13 +423,22 @@ class MillipedeInputDataExperimentalGroup:
                                                        K_baseline=K_baseline
                                                       )
             
+
+
             data = None
             if experiment_merge_strategy == MillipedeExperimentMergeStrategy.SUM:
                 nucleotide_ids = [col for col in merged_experiment_df_list[0].columns if ">" in col]
                 merged_experiments_df: pd.DataFrame
                 merged_experiments_df = pd.concat(merged_experiment_df_list).groupby(nucleotide_ids, as_index=False).sum()
+                # Filter rows based on cutoffs
                 merged_experiments_df = merged_experiments_df[merged_experiments_df["total_reads"] >= cutoff_specification.all_experiment_num_cutoff]
                 merged_experiments_df = merged_experiments_df[merged_experiments_df["total_reads"] > 0] # Ensure non-zero reads to prevent error during modelling
+
+                # Filter columns based on cutoffs 
+                merged_experiments_df = filter_columns_by_variant_frequency(input_design_df = merged_experiments_df, millipede_cutoff_specification = cutoff_specification)
+
+
+                
                 merged_experiments_df = __add_supporting_columns_partial(encoding_df = merged_experiments_df)
                 data = merged_experiments_df
             elif experiment_merge_strategy == MillipedeExperimentMergeStrategy.COVARIATE:
@@ -420,6 +450,11 @@ class MillipedeInputDataExperimentalGroup:
                     merged_experiments_df = [merged_experiments_df_i.fillna(0.0) for merged_experiments_df_i in merged_experiments_df] # TODO 20221021: This is to ensure all intercept values are assigned (since NaNs exist with covariate by experiment) - there is possible if there are other NaN among features that it will be set to 0 unintentionally
                     merged_experiments_df = [__add_supporting_columns_partial(encoding_df = merged_experiments_df_i) for merged_experiments_df_i in merged_experiments_df]
                     merged_experiments_df = [merged_experiments_df_i[merged_experiments_df_i["total_reads"] > 0] for merged_experiments_df_i in merged_experiments_df] # Ensure non-zero reads to prevent error during modelling
+                    
+                    # Filter columns based on cutoffs 
+                    merged_experiments_df = [filter_columns_by_variant_frequency(input_design_df = merged_experiments_df_i, millipede_cutoff_specification = cutoff_specification) for merged_experiments_df_i in merged_experiments_df]
+                    
+
                     data = merged_experiments_df
                 elif replicate_merge_strategy in [MillipedeReplicateMergeStrategy.SUM, MillipedeReplicateMergeStrategy.COVARIATE, MillipedeReplicateMergeStrategy.MODELLED_COMBINED]: # SINGLE MATRIX FOR ALL REPLICATES
                     merged_experiment_df_list: List[pd.DataFrame]
@@ -428,6 +463,10 @@ class MillipedeInputDataExperimentalGroup:
                     merged_experiments_df = merged_experiments_df.fillna(0.0) # TODO 20221021: This is to ensure all intercept values are assigned (since NaNs exist with covariate by experiment) - there is possible if there are other NaN among features that it will be set to 0 unintentionally
                     merged_experiments_df = __add_supporting_columns_partial(encoding_df = merged_experiments_df)
                     merged_experiments_df = merged_experiments_df[merged_experiments_df["total_reads"] > 0] # Ensure non-zero reads to prevent error during modelling
+
+                    # Filter columns based on cutoffs 
+                    merged_experiments_df = filter_columns_by_variant_frequency(input_design_df = merged_experiments_df, millipede_cutoff_specification = cutoff_specification)
+
                     data = merged_experiments_df
                     
             elif experiment_merge_strategy == MillipedeExperimentMergeStrategy.SEPARATE:
@@ -435,11 +474,19 @@ class MillipedeInputDataExperimentalGroup:
                     merged_experiment_df_list: List[List[pd.DataFrame]]
                     merged_experiment_df_list = [[__add_supporting_columns_partial(encoding_df = merged_rep_df) for merged_rep_df in merged_rep_df_list] for merged_rep_df_list in merged_experiment_df_list]
                     merged_experiment_df_list = [[merged_rep_df[merged_rep_df["total_reads"] > 0] for merged_rep_df in merged_rep_df_list] for merged_rep_df_list in merged_experiment_df_list] # Ensure non-zero reads to prevent error during modelling
+
+                    # Filter columns based on cutoffs 
+                    merged_experiment_df_list = [[filter_columns_by_variant_frequency(input_design_df = merged_rep_df, millipede_cutoff_specification = cutoff_specification) for merged_rep_df in merged_rep_df_list] for merged_rep_df_list in merged_experiment_df_list]
+
                     data = merged_experiment_df_list
                 elif replicate_merge_strategy in [MillipedeReplicateMergeStrategy.SUM, MillipedeReplicateMergeStrategy.COVARIATE, MillipedeReplicateMergeStrategy.MODELLED_COMBINED]:
                     merged_experiment_df_list: List[pd.DataFrame]
                     merged_experiment_df_list = [__add_supporting_columns_partial(encoding_df = merged_reps_df) for merged_reps_df in merged_experiment_df_list]
                     merged_experiment_df_list = [merged_reps_df[merged_reps_df["total_reads"] > 0] for merged_reps_df in merged_experiment_df_list]
+
+                    # Filter columns based on cutoffs 
+                    merged_experiment_df_list = [filter_columns_by_variant_frequency(input_design_df = merged_reps_df, millipede_cutoff_specification = cutoff_specification) for merged_reps_df in merged_experiment_df_list]
+
                     data = merged_experiment_df_list
             else:
                 raise Exception("Developer error: Unexpected value for MillipedeExperimentMergeStrategy: {}".format(experiment_merge_strategy))

@@ -55,6 +55,7 @@ class MillipedeReplicateMergeStrategy(Enum):
     COVARIATE = "COVARIATE"
     MODELLED_SEPARATE = "MODELLED_SEPARATE"
     MODELLED_COMBINED = "MODELLED_COMBINED"
+    PYDEQ = "PYDESEQ"
     
 class MillipedeExperimentMergeStrategy(Enum):
     """

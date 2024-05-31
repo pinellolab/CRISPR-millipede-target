@@ -1,6 +1,6 @@
 import numpy as np
 from dataclasses import dataclass
-from typing import Union, Mapping, List, Tuple
+from typing import Union, Mapping, List, Tuple, Optional
 from enum import Enum
 import pandas as pd
 from millipede import NormalLikelihoodVariableSelector
@@ -55,7 +55,6 @@ class MillipedeReplicateMergeStrategy(Enum):
     COVARIATE = "COVARIATE"
     MODELLED_SEPARATE = "MODELLED_SEPARATE"
     MODELLED_COMBINED = "MODELLED_COMBINED"
-    PYDEQ = "PYDESEQ"
     
 class MillipedeExperimentMergeStrategy(Enum):
     """
@@ -88,9 +87,10 @@ class MillipedeCutoffSpecification():
     per_replicate_all_condition_num_cutoff:int = 0 
     all_replicate_num_cutoff:int = 2
     all_experiment_num_cutoff:int = 0
+    column_removal_proportion: Optional[float] = None
         
     def __hash__(self):
-        return hash((self.per_replicate_each_condition_num_cutoff, self.per_replicate_all_condition_num_cutoff, self.all_replicate_num_cutoff, self.all_experiment_num_cutoff))
+        return hash((self.per_replicate_each_condition_num_cutoff, self.per_replicate_all_condition_num_cutoff, self.all_replicate_num_cutoff, self.all_experiment_num_cutoff, self.column_removal_proportion))
     
     def __str__(self):
         return "per_replicate_each_condition_num_cutoff={};per_replicate_all_condition_num_cutoff={};all_replicate_num_cutoff={};all_experiment_num_cutoff={}".format(self.per_replicate_each_condition_num_cutoff, self.per_replicate_all_condition_num_cutoff, self.all_replicate_num_cutoff, self.all_experiment_num_cutoff)
@@ -137,7 +137,7 @@ class MillipedeInputData:
     baseline_pop_fn_experiment_list: List[str]
     baseline_pop_df_reads_colname: str
     reps: List[int]
-    cutoff_specification: MillipedeCutoffSpecification
+    cutoff_specification:MillipedeCutoffSpecification
     replicate_merge_strategy:MillipedeReplicateMergeStrategy
     experiment_merge_strategy:MillipedeExperimentMergeStrategy
 

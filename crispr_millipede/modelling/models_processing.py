@@ -25,21 +25,24 @@ from .pydeseq import run_pydeseq2
     Helper function for filtering the columns of an input design matrix
 """
 def filter_columns_by_variant_frequency(input_design_df: pd.DataFrame, millipede_cutoff_specification: MillipedeCutoffSpecification) -> pd.DataFrame:
-    # Get columns (both nucleotide columns for filtering, and non-nucleotide columns to add back in later)
-    nucleotide_ids = [col for col in input_design_df.columns if ">"  in col]
-    non_nucleotide_ids = [col for col in input_design_df.columns if ">" not in col]
+    if millipede_cutoff_specification.column_removal_proportion is not None:
+        # Get columns (both nucleotide columns for filtering, and non-nucleotide columns to add back in later)
+        nucleotide_ids = [col for col in input_design_df.columns if ">"  in col]
+        non_nucleotide_ids = [col for col in input_design_df.columns if ">" not in col]
 
-    # Calculate the variant frequency for each nucleotide column
-    variant_reads = input_design_df.loc[:, nucleotide_ids].mul(input_design_df["total_reads"], axis=0).sum(axis=0)
-    variant_af = variant_reads.astype(float).mul(1./input_design_df["total_reads"].sum())
-    variant_af[variant_af.isna()] = 0
+        # Calculate the variant frequency for each nucleotide column
+        variant_reads = input_design_df.loc[:, nucleotide_ids].mul(input_design_df["total_reads"], axis=0).sum(axis=0)
+        variant_af = variant_reads.astype(float).mul(1./input_design_df["total_reads"].sum())
+        variant_af[variant_af.isna()] = 0
 
-    # Perform filtering based on variant frequency
-    selected_nucleotide_ids = variant_af[variant_af>=millipede_cutoff_specification.column_removal_proportion].index
-    new_design_columns = selected_nucleotide_ids.append(pd.Index(non_nucleotide_ids))
-    input_design_df = input_design_df.loc[:, new_design_columns]               
+        # Perform filtering based on variant frequency
+        selected_nucleotide_ids = variant_af[variant_af>=millipede_cutoff_specification.column_removal_proportion].index
+        new_design_columns = selected_nucleotide_ids.append(pd.Index(non_nucleotide_ids))
+        input_design_df = input_design_df.loc[:, new_design_columns]               
 
-    return input_design_df
+        return input_design_df
+    else:
+        return input_design_df
 
 
 # TODO 20221019: Include presort in the filtering, so therefore must also take presort fn as input

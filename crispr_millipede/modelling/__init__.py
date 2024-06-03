@@ -21,3 +21,5 @@ from .models_visualization import (MillipedeModelResultVisualizationExperimental
 from .utility import (save_or_load_pickle, 
                       display_all_pickle_versions)
 
+from .pydeseq import run_pydeseq2
+

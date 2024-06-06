@@ -67,6 +67,7 @@ class MillipedeInputDataExperimentalGroup:
     wt_normalization: bool
     total_normalization: bool
     sigma_scale_normalized: bool
+    decay_sigma_scale: bool
     K_enriched: float
     K_baseline: float 
     a_parameter: float
@@ -102,6 +103,7 @@ class MillipedeInputDataExperimentalGroup:
             wt_normalization=self.wt_normalization,
             total_normalization=self.total_normalization,
             sigma_scale_normalized=self.sigma_scale_normalized,
+            decay_sigma_scale=self.decay_sigma_scale,
             K_enriched=self.K_enriched,
             K_baseline=self.K_baseline
             a_parameter=self.a_parameter
@@ -152,6 +154,7 @@ class MillipedeInputDataExperimentalGroup:
                    wt_normalization: bool,
                    total_normalization: bool,
                    sigma_scale_normalized: bool,
+                   decay_sigma_scale: bool,
                    K_enriched: float,
                    K_baseline: float,
                    a_parameter: float) -> MillipedeInputData:
@@ -440,6 +443,7 @@ class MillipedeInputDataExperimentalGroup:
                                                        enriched_pop_df_reads_colname=enriched_pop_df_reads_colname,                               
                                                        baseline_pop_df_reads_colname= baseline_pop_df_reads_colname,
                                                        sigma_scale_normalized= sigma_scale_normalized,
+                                                       decay_sigma_scale= decay_sigma_scale,
                                                        K_enriched=K_enriched,
                                                        K_baseline=K_baseline,
                                                        a_parameter=a_parameter
@@ -599,6 +603,7 @@ class MillipedeInputDataExperimentalGroup:
                                  enriched_pop_df_reads_colname: str, 
                                  baseline_pop_df_reads_colname: str,
                                  sigma_scale_normalized: bool,
+                                 decay_sigma_scale: bool,
                                  K_enriched: float,
                                  K_baseline: float,
                                  a_parameter: float
@@ -619,9 +624,15 @@ class MillipedeInputDataExperimentalGroup:
             #encoding_df['scale_factor'] = 1.0 / np.sqrt(encoding_df['total_reads']) # NOTE: Intentionally keeping the total_reads as the raw to avoid being impact by normalization - this could be subject to change
         if 'scale_factor' not in encoding_df.columns: 
             if sigma_scale_normalized:
-                encoding_df['scale_factor'] = ((decay_function(encoding_df[enriched_pop_df_reads_colname], K_enriched, a_parameter))  + (decay_function(encoding_df[baseline_pop_df_reads_colname], K_baseline, a_parameter))) # NOTE: Intentionally keeping the total_reads as the raw to avoid being impact by normalization - this could be subject to change
+                if decay_sigma_scale:
+                    encoding_df['scale_factor'] = ((decay_function(encoding_df[enriched_pop_df_reads_colname], K_enriched, a_parameter))  + (decay_function(encoding_df[baseline_pop_df_reads_colname], K_baseline, a_parameter))) # NOTE: Intentionally keeping the total_reads as the raw to avoid being impact by normalization - this could be subject to change
+                else:
+                    encoding_df['scale_factor'] = (K_enriched / np.sqrt(encoding_df[enriched_pop_df_reads_colname])) + (K_baseline / np.sqrt(encoding_df[baseline_pop_df_reads_colname]))
             else:
-                encoding_df['scale_factor'] = ((decay_function(encoding_df[enriched_pop_df_reads_colname + "_raw"], K_enriched, a_parameter)) + (decay_function(encoding_df[baseline_pop_df_reads_colname + "_raw"], K_baseline, a_parameter)))  # NOTE: Intentionally keeping the total_reads as the raw to avoid being impact by normalization - this could be subject to change
+                if decay_sigma_scale:
+                    encoding_df['scale_factor'] = ((decay_function(encoding_df[enriched_pop_df_reads_colname + "_raw"], K_enriched, a_parameter)) + (decay_function(encoding_df[baseline_pop_df_reads_colname + "_raw"], K_baseline, a_parameter)))  # NOTE: Intentionally keeping the total_reads as the raw to avoid being impact by normalization - this could be subject to change
+                else:
+                    encoding_df['scale_factor'] = (K_enriched / np.sqrt(encoding_df[enriched_pop_df_reads_colname + "_raw"])) + (K_baseline / np.sqrt(encoding_df[baseline_pop_df_reads_colname + "_raw"]))
                         
         return encoding_df
     

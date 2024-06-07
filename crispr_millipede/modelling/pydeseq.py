@@ -7,6 +7,7 @@ import pandas as pd
 from typing import List, Optional
 
 from functools import reduce
+import numpy as np
 
 import plotly.graph_objects as go
 import plotly.express as px
@@ -25,7 +26,7 @@ def run_pydeseq2(encoding_reps: List[pd.DataFrame], enriched_pop_df_reads_colnam
     # Rename non-feature columns to add merged suffixed based on replicate number (so that we can merge all replicate dataframes together without column naming conflicts)
     encoding_reps = [encoding_rep.rename(columns=dict(zip(non_nucleotide_ids,[col + f"_{index}" for col in non_nucleotide_ids]))) for index, encoding_rep in enumerate(encoding_reps)]
     merged_encoding_reps = reduce(lambda left,right: pd.merge(left, right, on=nucleotide_ids, how='outer').fillna(0), encoding_reps)
-    merged_encoding_reps = merged_encoding_reps.groupby(nucleotide_ids).sum()
+    merged_encoding_reps = merged_encoding_reps.groupby(nucleotide_ids, as_index=False).sum()
     
     # Subset the columns to only the count columns for the PyDESeq2 input
     sample_names = [colname for index in range(len(encoding_reps)) for colname in [enriched_pop_df_reads_colname + f"_{index}", baseline_pop_df_reads_colname + f"_{index}"]]
@@ -100,11 +101,11 @@ def run_pydeseq2(encoding_reps: List[pd.DataFrame], enriched_pop_df_reads_colnam
     
 
 
-def visualize_deseq2_result(merged_encoding_reps, title_label, score_col="score", negative_log_pvalue_col="negative_log_pvalue", filename=None):
+def visualize_deseq2_result(merged_encoding_reps, title_label, score_col="score", pvalue_col="pvalue", filename=None):
     fig = go.Figure()
     scatter = go.Scatter(
         x=merged_encoding_reps[score_col],
-        y=merged_encoding_reps[negative_log_pvalue_col],
+        y=-np.log10(merged_encoding_reps[pvalue_col]),
         mode="markers",
         marker=dict(size=6, opacity=0.5),
         hovertext=list(merged_encoding_reps.index)
@@ -113,7 +114,7 @@ def visualize_deseq2_result(merged_encoding_reps, title_label, score_col="score"
     fig.update_layout(
         showlegend=False,
         xaxis=dict(title=title_label, title_font=dict(size=18), range=[-2.5, 2.5], showgrid = False, zeroline = False, ticks="outside", ticklen = 10, tickfont=dict(size=15)),
-        yaxis=dict(title="-10 * log10(pvalue)", title_font=dict(size=18), range=[-10, 200], showgrid = False, zeroline = False, ticks="outside", ticklen = 10, tickfont=dict(size=15)),
+        yaxis=dict(title="-log10(pvalue)", title_font=dict(size=18), range=[-10, 200], showgrid = False, zeroline = False, ticks="outside", ticklen = 10, tickfont=dict(size=15)),
         plot_bgcolor="white"
     )
     
@@ -121,8 +122,8 @@ def visualize_deseq2_result(merged_encoding_reps, title_label, score_col="score"
     
     fig.add_annotation(
         x=1, y=1,
-        xref="paper", yref="paperr",
-        text="Total number of alleles: " + str(len(merged_encoding_reps.shape[0])),
+        xref="paper", yref="paper",
+        text="Total number of alleles: " + str(merged_encoding_reps.shape[0]),
         showarrow=False,
         xanchor="right",
         yanchor="top",
@@ -130,7 +131,8 @@ def visualize_deseq2_result(merged_encoding_reps, title_label, score_col="score"
     )
     fig.update_xaxes(showline=True, linewidth=1, linecolor="black")
     fig.update_yaxes(showline=True, linewidth=1, linecolor="black")
-    fig.show()
 
     if filename:
         fig.write_image(filename)
+    else:
+        fig.show()

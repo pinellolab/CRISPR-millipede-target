@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "crispr-millipede"
-version = "0.1.56"
+version = "0.1.62"
 description = ""
 authors = ["Basheer Becerra <bbecerr@outlook.com>"]
 readme = "README.md"
@@ -21,6 +21,8 @@ seaborn = "^0.11.2"
 crispr-shrinkage = "0.1.63"
 pydeseq2 = "0.4.4"
 plotly = "5.9.0"
+nbformat = ">=4.2.0"
+kaleido = "0.2.1"
 
 [build-system]
 requires = ["poetry-core"]

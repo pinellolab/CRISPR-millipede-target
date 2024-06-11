@@ -105,7 +105,7 @@ class MillipedeInputDataExperimentalGroup:
             sigma_scale_normalized=self.sigma_scale_normalized,
             decay_sigma_scale=self.decay_sigma_scale,
             K_enriched=self.K_enriched,
-            K_baseline=self.K_baseline
+            K_baseline=self.K_baseline,
             a_parameter=self.a_parameter
         )
         # This will be the variable containing the final dictionary with input design matrix for all specifications

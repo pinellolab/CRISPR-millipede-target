@@ -625,12 +625,12 @@ class MillipedeInputDataExperimentalGroup:
         if 'scale_factor' not in encoding_df.columns: 
             if sigma_scale_normalized:
                 if decay_sigma_scale:
-                    encoding_df['scale_factor'] = ((decay_function(encoding_df[enriched_pop_df_reads_colname], K_enriched, a_parameter))  + (decay_function(encoding_df[baseline_pop_df_reads_colname], K_baseline, a_parameter))) # NOTE: Intentionally keeping the total_reads as the raw to avoid being impact by normalization - this could be subject to change
+                    encoding_df['scale_factor'] = ((decay_function(encoding_df[enriched_pop_df_reads_colname], K_enriched, a_parameter))  + (decay_function(encoding_df[baseline_pop_df_reads_colname], K_baseline, a_parameter)))/2 # NOTE: Intentionally keeping the total_reads as the raw to avoid being impact by normalization - this could be subject to change
                 else:
                     encoding_df['scale_factor'] = (K_enriched / np.sqrt(encoding_df[enriched_pop_df_reads_colname])) + (K_baseline / np.sqrt(encoding_df[baseline_pop_df_reads_colname]))
             else:
                 if decay_sigma_scale:
-                    encoding_df['scale_factor'] = ((decay_function(encoding_df[enriched_pop_df_reads_colname + "_raw"], K_enriched, a_parameter)) + (decay_function(encoding_df[baseline_pop_df_reads_colname + "_raw"], K_baseline, a_parameter)))  # NOTE: Intentionally keeping the total_reads as the raw to avoid being impact by normalization - this could be subject to change
+                    encoding_df['scale_factor'] = ((decay_function(encoding_df[enriched_pop_df_reads_colname + "_raw"], K_enriched, a_parameter)) + (decay_function(encoding_df[baseline_pop_df_reads_colname + "_raw"], K_baseline, a_parameter)))/2  # NOTE: Intentionally keeping the total_reads as the raw to avoid being impact by normalization - this could be subject to change
                 else:
                     encoding_df['scale_factor'] = (K_enriched / np.sqrt(encoding_df[enriched_pop_df_reads_colname + "_raw"])) + (K_baseline / np.sqrt(encoding_df[baseline_pop_df_reads_colname + "_raw"]))
                         

@@ -82,7 +82,7 @@ class MillipedeKmer(Enum):
     TWO = 2
     
 @dataclass
-class MillipedeCutoffSpecification():
+class MillipedeCutoffSpecification:
     per_replicate_each_condition_num_cutoff:int = 0
     per_replicate_all_condition_num_cutoff:int = 0 
     all_replicate_num_cutoff:int = 2
@@ -99,6 +99,26 @@ class MillipedeCutoffSpecification():
         return str(self)
 
 @dataclass
+class MillipedeDesignMatrixProcessingSpecification:
+    wt_normalization: bool = True
+    total_normalization: bool = False
+    sigma_scale_normalized: bool = False
+    decay_sigma_scale: bool = True
+    K_enriched: float = 1
+    K_baseline: float = 1
+    a_parameter: float = 300
+
+    def __hash__(self):
+        return hash((self.wt_normalization, self.total_normalization, self.sigma_scale_normalized, self.decay_sigma_scale, self.K_enriched, self.K_baseline, self.a_parameter))
+    
+    def __str__(self):
+        return f"wt_normalization={self.wt_normalization};total_normalization={self.total_normalization};sigma_scale_normalized={self.sigma_scale_normalized};decay_sigma_scale={self.decay_sigma_scale};K_enriched={self.K_enriched};K_baseline={self.K_baseline};a_parameter={self.a_parameter}"
+    
+    def __repr__(self):
+        return str(self)
+    
+    
+@dataclass
 class MillipedeModelSpecification:
     """
         Defines all specifications to produce Millipede model(s)
@@ -107,6 +127,7 @@ class MillipedeModelSpecification:
     replicate_merge_strategy: MillipedeReplicateMergeStrategy
     experiment_merge_strategy: MillipedeExperimentMergeStrategy
     cutoff_specification: MillipedeCutoffSpecification
+    design_matrix_processing_specification: MillipedeDesignMatrixProcessingSpecification
     shrinkage_input: Union[MillipedeShrinkageInput, None] = None
     S: float = 1.0 #S parameter
     tau: float = 0.01 #tau parameter
@@ -140,6 +161,7 @@ class MillipedeInputData:
     cutoff_specification:MillipedeCutoffSpecification
     replicate_merge_strategy:MillipedeReplicateMergeStrategy
     experiment_merge_strategy:MillipedeExperimentMergeStrategy
+    design_matrix_processing_specification: MillipedeDesignMatrixProcessingSpecification
 
 @dataclass
 class MillipedeModelSpecificationSingleMatrixResult:

@@ -64,13 +64,14 @@ class MillipedeInputDataExperimentalGroup:
     experiment_labels: List[str]
     reps: List[int]
     millipede_model_specification_set: Mapping[str, MillipedeModelSpecification]
-    wt_normalization: bool
-    total_normalization: bool
-    sigma_scale_normalized: bool
-    decay_sigma_scale: bool
-    K_enriched: float
-    K_baseline: float 
-    a_parameter: float
+    # NOTE 20240613: Commented out; Moved to MillipedeModelSpecification, can delete once tested
+    #wt_normalization: bool
+    #total_normalization: bool
+    #sigma_scale_normalized: bool
+    #decay_sigma_scale: bool
+    #K_enriched: float
+    #K_baseline: float 
+    #a_parameter: float
 
 
     """
@@ -99,34 +100,35 @@ class MillipedeInputDataExperimentalGroup:
             enriched_pop_df_reads_colname=self.enriched_pop_df_reads_colname, 
             baseline_pop_fn_experiment_list=self.baseline_pop_fn_experiment_list, 
             baseline_pop_df_reads_colname=self.baseline_pop_df_reads_colname, 
-            reps=self.reps,
-            wt_normalization=self.wt_normalization,
-            total_normalization=self.total_normalization,
-            sigma_scale_normalized=self.sigma_scale_normalized,
-            decay_sigma_scale=self.decay_sigma_scale,
-            K_enriched=self.K_enriched,
-            K_baseline=self.K_baseline,
-            a_parameter=self.a_parameter
+            reps=self.reps
+            # NOTE 20240613: Commented out; Moved to MillipedeModelSpecification, can delete once tested
+            #wt_normalization=self.wt_normalization,
+            #total_normalization=self.total_normalization,
+            #sigma_scale_normalized=self.sigma_scale_normalized,
+            #decay_sigma_scale=self.decay_sigma_scale,
+            #K_enriched=self.K_enriched,
+            #K_baseline=self.K_baseline,
+            #a_parameter=self.a_parameter
         )
         # This will be the variable containing the final dictionary with input design matrix for all specifications
         millipede_model_specification_set_with_data: Mapping[str, Tuple[MillipedeModelSpecification, MillipedeInputData]] = dict()
         
-        # Helpful note: This retrieves the unique set of input design matrix to generate based on the provided model specifications (specifically the unique set of replicate merge strategy, experiment merge strategy, and cutoff specifications as the model input data only varies based on these criteria)
-        millipede_design_matrix_set: Mapping[Tuple[MillipedeReplicateMergeStrategy, MillipedeExperimentMergeStrategy, MillipedeCutoffSpecification, MillipedeShrinkageInput], List[str]] = self.__determine_full_design_matrix_set(self.millipede_model_specification_set)
+        # Helpful note: This retrieves the unique set of input design matrix to generate based on the provided model specifications (specifically the unique set of replicate merge strategy, experiment merge strategy, and other specifications as the model input data only varies based on these criteria)
+        millipede_design_matrix_set: Mapping[Tuple[MillipedeReplicateMergeStrategy, MillipedeExperimentMergeStrategy, MillipedeCutoffSpecification, MillipedeShrinkageInput, MillipedeDesignMatrixProcessingSpecification], List[str]] = self.__determine_full_design_matrix_set(self.millipede_model_specification_set)
         self.__millipede_design_matrix_set = millipede_design_matrix_set
         
         # Below generates the input data and assigns to corresponding model specifications
-        merge_strategy_and_cutoff_tuple: Tuple[MillipedeReplicateMergeStrategy, MillipedeExperimentMergeStrategy, MillipedeCutoffSpecification, MillipedeShrinkageInput]
+        merge_strategy_and_cutoff_tuple: Tuple[MillipedeReplicateMergeStrategy, MillipedeExperimentMergeStrategy, MillipedeCutoffSpecification, MillipedeShrinkageInput, MillipedeDesignMatrixProcessingSpecification]
         millipede_model_specification_id_list: List[str]
         for merge_strategy_and_cutoff_tuple, millipede_model_specification_id_list in millipede_design_matrix_set.items():
             # Generate input data - most computationally intensive task in this method
-            print("Retrieving data for\n\tReplicate Merge Strategy: {} \n\tExperiment Merge Strategy {}\n\tCutoff: {}". format(merge_strategy_and_cutoff_tuple[0], merge_strategy_and_cutoff_tuple[1], merge_strategy_and_cutoff_tuple[2]))
+            print("Retrieving data for\n\tReplicate Merge Strategy: {} \n\tExperiment Merge Strategy {}\n\tCutoff: {}\n\tMatrixProcessing: {}". format(merge_strategy_and_cutoff_tuple[0], merge_strategy_and_cutoff_tuple[1], merge_strategy_and_cutoff_tuple[2], merge_strategy_and_cutoff_tuple[4]))
             millipede_input_data: MillipedeInputData = __get_data_partial(
                 replicate_merge_strategy=merge_strategy_and_cutoff_tuple[0], 
                 experiment_merge_strategy=merge_strategy_and_cutoff_tuple[1],
                 cutoff_specification=merge_strategy_and_cutoff_tuple[2],
-                shrinkage_input=merge_strategy_and_cutoff_tuple[3]
-                
+                shrinkage_input=merge_strategy_and_cutoff_tuple[3],
+                design_matrix_processing_specification=merge_strategy_and_cutoff_tuple[4]
             )
                 
             # Assign input data to corresponding model specifications
@@ -134,8 +136,6 @@ class MillipedeInputDataExperimentalGroup:
                 millipede_model_specification_set_with_data[millipede_model_specification_id] = (self.millipede_model_specification_set[millipede_model_specification_id], millipede_input_data)
                 
         self.millipede_model_specification_set_with_data = millipede_model_specification_set_with_data
-                
-                
 
     """ 
     Function to process the encoding dataframe (from encode pipeline script) and create design matrix for milliped
@@ -150,14 +150,17 @@ class MillipedeInputDataExperimentalGroup:
                    replicate_merge_strategy:MillipedeReplicateMergeStrategy, 
                    experiment_merge_strategy:MillipedeExperimentMergeStrategy,
                    cutoff_specification: MillipedeCutoffSpecification,
-                   shrinkage_input: Union[MillipedeShrinkageInput, None],
-                   wt_normalization: bool,
-                   total_normalization: bool,
-                   sigma_scale_normalized: bool,
-                   decay_sigma_scale: bool,
-                   K_enriched: float,
-                   K_baseline: float,
-                   a_parameter: float) -> MillipedeInputData:
+                   design_matrix_processing_specification: MillipedeDesignMatrixProcessingSpecification,
+                   shrinkage_input: Union[MillipedeShrinkageInput, None]
+                   # NOTE 20240613: Commented out; Moved to design_matrix_processing_specification, can delete once tested
+                   #wt_normalization: bool,
+                   #total_normalization: bool,
+                   #sigma_scale_normalized: bool,
+                   #decay_sigma_scale: bool,
+                   #K_enriched: float,
+                   #K_baseline: float,
+                   #a_parameter: float
+                   ) -> MillipedeInputData:
         
         with warnings.catch_warnings(record=True) as w:
             warnings.simplefilter("always")
@@ -168,7 +171,6 @@ class MillipedeInputDataExperimentalGroup:
             if experiment_merge_strategy == MillipedeExperimentMergeStrategy.SUM:
                 assert replicate_merge_strategy == MillipedeReplicateMergeStrategy.SUM, "replicate_merge_strategy must be SUM if experiment_merge_strategy is SUM"
             
-
             #
             # Process the replicate dataframes:
             # type List[pd.DataFrame] if relicates are combined
@@ -222,7 +224,7 @@ class MillipedeInputDataExperimentalGroup:
                     merged_exp_rep_df = merged_exp_rep_df[merged_exp_rep_df["total_reads"] >= cutoff_specification.per_replicate_all_condition_num_cutoff]
                     
                     # Normalize counts
-                    merged_exp_rep_normalized_df: pd.DataFrame = self.__normalize_counts(merged_exp_rep_df, enriched_pop_df_reads_colname, baseline_pop_df_reads_colname, nucleotide_ids, wt_normalization, total_normalization)
+                    merged_exp_rep_normalized_df: pd.DataFrame = self.__normalize_counts(merged_exp_rep_df, enriched_pop_df_reads_colname, baseline_pop_df_reads_colname, nucleotide_ids, design_matrix_processing_specification.wt_normalization, design_matrix_processing_specification.total_normalization)
                     
                     # Add to the replicate list
                     exp_merged_rep_df_list.append(merged_exp_rep_normalized_df)
@@ -247,9 +249,10 @@ class MillipedeInputDataExperimentalGroup:
                 elif replicate_merge_strategy == MillipedeReplicateMergeStrategy.SEPARATE:
                     merged_experiment_df_list.append(exp_merged_rep_df_list)
 
-                elif replicate_merge_strategy == MillipedeReplicateMergeStrategy.PYDEQ:
-                    merged_exp_reps_df: pd.DataFrame = run_pydeseq2(exp_merged_rep_df_list)
-                    merged_experiment_df_list.append(merged_exp_reps_df)
+                # NOTE 6/13/2024: Decided note to implement score as PYDeseq2 score, low priority
+                #elif replicate_merge_strategy == MillipedeReplicateMergeStrategy.PYDEQ:
+                #    merged_exp_reps_df: pd.DataFrame = run_pydeseq2(exp_merged_rep_df_list)
+                #    merged_experiment_df_list.append(merged_exp_reps_df)
                 
                 elif replicate_merge_strategy == MillipedeReplicateMergeStrategy.MODELLED_COMBINED:
                     # TODO: Perform error handling. Double check that each dataframe actually has a WT column
@@ -442,11 +445,11 @@ class MillipedeInputDataExperimentalGroup:
             __add_supporting_columns_partial = partial(self.__add_supporting_columns,
                                                        enriched_pop_df_reads_colname=enriched_pop_df_reads_colname,                               
                                                        baseline_pop_df_reads_colname= baseline_pop_df_reads_colname,
-                                                       sigma_scale_normalized= sigma_scale_normalized,
-                                                       decay_sigma_scale= decay_sigma_scale,
-                                                       K_enriched=K_enriched,
-                                                       K_baseline=K_baseline,
-                                                       a_parameter=a_parameter
+                                                       sigma_scale_normalized= design_matrix_processing_specification.sigma_scale_normalized,
+                                                       decay_sigma_scale= design_matrix_processing_specification.decay_sigma_scale,
+                                                       K_enriched=design_matrix_processing_specification.K_enriched,
+                                                       K_baseline=design_matrix_processing_specification.K_baseline,
+                                                       a_parameter=design_matrix_processing_specification.a_parameter
                                                       )
             
 
@@ -526,7 +529,8 @@ class MillipedeInputDataExperimentalGroup:
                 reps=reps, 
                 replicate_merge_strategy=replicate_merge_strategy, 
                 experiment_merge_strategy=experiment_merge_strategy,
-                cutoff_specification=cutoff_specification
+                cutoff_specification=cutoff_specification,
+                design_matrix_processing_specification=design_matrix_processing_specification
             )
             
             return millipede_input_data
@@ -537,12 +541,12 @@ class MillipedeInputDataExperimentalGroup:
 
             The returned variable is a dictionary with the replicate/experiment merge strategy tuple as the key and the list of Millipede model specifications IDs as the value to ensure the model specification that each design matrix maps to.
         """
-        millipede_design_matrix_set: Mapping[Tuple[MillipedeReplicateMergeStrategy, MillipedeExperimentMergeStrategy, MillipedeCutoffSpecification, MillipedeShrinkageInput], List[str]] = defaultdict(list)
+        millipede_design_matrix_set: Mapping[Tuple[MillipedeReplicateMergeStrategy, MillipedeExperimentMergeStrategy, MillipedeCutoffSpecification, MillipedeShrinkageInput, MillipedeDesignMatrixProcessingSpecification], List[str]] = defaultdict(list)
 
         millipede_model_specification_id: str
         millipede_model_specification: MillipedeModelSpecification
         for millipede_model_specification_id, millipede_model_specification in millipede_model_specification_set.items():
-            millipede_design_matrix_set[(millipede_model_specification.replicate_merge_strategy, millipede_model_specification.experiment_merge_strategy, millipede_model_specification.cutoff_specification, millipede_model_specification.shrinkage_input)].append(millipede_model_specification_id)
+            millipede_design_matrix_set[(millipede_model_specification.replicate_merge_strategy, millipede_model_specification.experiment_merge_strategy, millipede_model_specification.cutoff_specification, millipede_model_specification.shrinkage_input, millipede_model_specification.design_matrix_processing_specification)].append(millipede_model_specification_id)
 
         return millipede_design_matrix_set
 

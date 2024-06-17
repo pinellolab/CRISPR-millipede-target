@@ -14,7 +14,8 @@ from .models_inputs import (MillipedeShrinkageInput,
                             MillipedeInputData,
                             MillipedeModelSpecificationSingleMatrixResult,
                             MillipedeModelSpecificationResult,
-                            MillipedeComputeDevice)
+                            MillipedeComputeDevice,
+                            MillipedeDesignMatrixProcessingSpecification)
 
 from .models_visualization import (MillipedeModelResultVisualizationExperimentalGroup)
 

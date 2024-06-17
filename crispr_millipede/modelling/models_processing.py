@@ -783,7 +783,7 @@ class MillipedeModelExperimentalGroup:
         for i, model_type in enumerate(millipede_model_specification.model_types):
             if model_type == MillipedeModelType.NORMAL:
                 print("Preparing data for model {}, {}/{}".format(model_type.value, i+1, len(model_types)))
-                required_columns = intercept_columns + nucleotide_ids + ['score', 'scale_factor'] 
+                required_columns = intercept_columns + nucleotide_ids + ['score'] 
                 sub_data_design_matrix = full_data_design_matrix[required_columns]    
                 
                 normal_selector = NormalLikelihoodVariableSelector(sub_data_design_matrix, 

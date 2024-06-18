@@ -27,8 +27,8 @@ from .pydeseq import run_pydeseq2
 """
 def filter_columns_by_variant_frequency(input_design_df: pd.DataFrame, millipede_cutoff_specification: MillipedeCutoffSpecification) -> pd.DataFrame:
     if millipede_cutoff_specification.column_removal_proportion is not None:
-        print("Before")
-        print(input_design_df)
+        #print("Before")
+        #print(input_design_df)
         # Get columns (both nucleotide columns for filtering, and non-nucleotide columns to add back in later)
         nucleotide_ids = [col for col in input_design_df.columns if ">"  in col]
         non_nucleotide_ids = [col for col in input_design_df.columns if ">" not in col]
@@ -42,8 +42,8 @@ def filter_columns_by_variant_frequency(input_design_df: pd.DataFrame, millipede
         selected_nucleotide_ids = variant_af[variant_af>=millipede_cutoff_specification.column_removal_proportion].index
         new_design_columns = selected_nucleotide_ids.append(pd.Index(non_nucleotide_ids))
         input_design_df = input_design_df.loc[:, new_design_columns]               
-        print("After")
-        print(input_design_df)
+        #print("After")
+        #print(input_design_df)
 
         return input_design_df
     else:

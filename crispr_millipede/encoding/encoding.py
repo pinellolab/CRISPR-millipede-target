@@ -80,6 +80,10 @@ class EncodingParameters:
     population_target_suffix: Optional[str] = "_target"
     population_presort_suffix: Optional[str] = "_presort"
     wt_suffix: Optional[str] = "_wt"
+    guide_edit_positions: List[int] = []
+    guide_window_halfsize: int = 3
+    variant_types: List[Tuple[str, str]] = []
+
 
 @dataclass
 class EncodingDataFrames:
@@ -125,7 +129,7 @@ class EncodingDataFrames:
             self.population_wt_encoding = None if self.population_wt_df is  None else [df.apply(parse_lambda, axis=1) for df in self.population_wt_df]
 
 
-    def postprocess_encoding(self, guide_edit_positions: List[int] = [], guide_window_halfsize: int = 3, variant_types: List[Tuple[str, str]] = []):
+    def postprocess_encoding(self):
         def trim_edges(trim_left=25, trim_right=25):
             # TODO
             pass
@@ -214,10 +218,10 @@ class EncodingDataFrames:
 
         # Denoise encodings
         print("Performing denoising")
-        self.population_baseline_encoding_processed = denoise_encodings(self.population_baseline_encoding_processed, guide_edit_positions, guide_window_halfsize, variant_types)
-        self.population_target_encoding_processed = denoise_encodings(self.population_target_encoding_processed, guide_edit_positions, guide_window_halfsize, variant_types)
-        self.population_presort_encoding_processed = denoise_encodings(self.population_presort_encoding_processed, guide_edit_positions, guide_window_halfsize, variant_types)
-        self.population_wt_encoding_processed = denoise_encodings(self.population_wt_encoding_processed, guide_edit_positions, guide_window_halfsize, []) # NOTE: Passing no variant types for WT sample
+        self.population_baseline_encoding_processed = denoise_encodings(self.population_baseline_encoding_processed, self.encoding_parameters.guide_edit_positions, self.encoding_parameters.guide_window_halfsize, self.encoding_parameters.variant_types)
+        self.population_target_encoding_processed = denoise_encodings(self.population_target_encoding_processed, self.encoding_parameters.guide_edit_positions, self.encoding_parameters.guide_window_halfsize, self.encoding_parameters.variant_types)
+        self.population_presort_encoding_processed = denoise_encodings(self.population_presort_encoding_processed, self.encoding_parameters.guide_edit_positions, self.encoding_parameters.guide_window_halfsize, self.encoding_parameters.variant_types)
+        self.population_wt_encoding_processed = denoise_encodings(self.population_wt_encoding_processed, self.encoding_parameters.guide_edit_positions, self.encoding_parameters.guide_window_halfsize, []) # NOTE: Passing no variant types for WT sample
         
         # Collapse rows with same encodings, sum the reads together.
         print("Collapsing encoding")

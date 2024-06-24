@@ -132,6 +132,8 @@ class MillipedeModelSpecification:
     S: float = 1.0 #S parameter
     tau: float = 0.01 #tau parameter
     tau_intercept: float = 1.0e-4
+    nu0: float = 0 #nu parameter
+    lambda0: float = 0 #lambda parameter 
     
     
     def validate_merge_strategies(self, replicate_merge_strategy: MillipedeReplicateMergeStrategy, experiment_merge_strategy:MillipedeExperimentMergeStrategy):

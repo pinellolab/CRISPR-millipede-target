@@ -778,6 +778,8 @@ class MillipedeModelExperimentalGroup:
         S = millipede_model_specification.S
         tau = millipede_model_specification.tau
         tau_intercept = millipede_model_specification.tau_intercept
+        nu0 = millipede_model_specification.nu0
+        lambda0 = millipede_model_specification.lambda0
         print("Iterating through all {} provided models: ".format(len(model_types), model_types))
         models: Mapping[MillipedeModelType, Union[NormalLikelihoodVariableSelector, BinomialLikelihoodVariableSelector]] = {}
         for i, model_type in enumerate(millipede_model_specification.model_types):
@@ -793,6 +795,8 @@ class MillipedeModelExperimentalGroup:
                                                                    S=S, 
                                                                    tau=tau,
                                                                    tau_intercept=tau_intercept,
+                                                                   nu0 = nu0,
+                                                                   lambda0 = lambda0,
                                                                    precision="double", 
                                                                    device=device.value)
 
@@ -813,6 +817,8 @@ class MillipedeModelExperimentalGroup:
                                                                                 S=S, 
                                                                                 tau=tau,
                                                                                 tau_intercept=tau_intercept,
+                                                                                nu0 = nu0,
+                                                                                lambda0 = lambda0,
                                                                                 precision="double", 
                                                                                 device=device.value)
 
@@ -831,6 +837,8 @@ class MillipedeModelExperimentalGroup:
                                                                        S=S, 
                                                                        tau=tau,
                                                                        tau_intercept=tau_intercept,
+                                                                       nu0 = nu0,
+                                                                       lambda0 = lambda0,
                                                                        precision="double", 
                                                                        device=device.value)
 

@@ -1,7 +1,7 @@
 import pandas as pd
 import numpy as np
 from pandarallel import pandarallel
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import List, Optional, Tuple
 from functools import reduce
 import copy
@@ -80,9 +80,9 @@ class EncodingParameters:
     population_target_suffix: Optional[str] = "_target"
     population_presort_suffix: Optional[str] = "_presort"
     wt_suffix: Optional[str] = "_wt"
-    guide_edit_positions: List[int] = []
+    guide_edit_positions: List[int] = field(default_factory=list)
     guide_window_halfsize: int = 3
-    variant_types: List[Tuple[str, str]] = []
+    variant_types: List[Tuple[str, str]] = field(default_factory=list)
 
 
 @dataclass

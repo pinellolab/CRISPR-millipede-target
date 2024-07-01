@@ -84,16 +84,17 @@ class MillipedeKmer(Enum):
 @dataclass
 class MillipedeCutoffSpecification:
     per_replicate_each_condition_num_cutoff:int = 0
+    per_replicate_presort_condition_num_cutoff:int = 0
     per_replicate_all_condition_num_cutoff:int = 0 
     all_replicate_num_cutoff:int = 2
     all_experiment_num_cutoff:int = 0
     column_removal_proportion: Optional[float] = None
         
     def __hash__(self):
-        return hash((self.per_replicate_each_condition_num_cutoff, self.per_replicate_all_condition_num_cutoff, self.all_replicate_num_cutoff, self.all_experiment_num_cutoff, self.column_removal_proportion))
+        return hash((self.per_replicate_each_condition_num_cutoff, self.per_replicate_presort_condition_num_cutoff, self.per_replicate_all_condition_num_cutoff, self.all_replicate_num_cutoff, self.all_experiment_num_cutoff, self.column_removal_proportion))
     
     def __str__(self):
-        return "per_replicate_each_condition_num_cutoff={};per_replicate_all_condition_num_cutoff={};all_replicate_num_cutoff={};all_experiment_num_cutoff={}".format(self.per_replicate_each_condition_num_cutoff, self.per_replicate_all_condition_num_cutoff, self.all_replicate_num_cutoff, self.all_experiment_num_cutoff)
+        return "per_replicate_each_condition_num_cutoff={};per_replicate_presort_condition_num_cutoff={};per_replicate_all_condition_num_cutoff={};all_replicate_num_cutoff={};all_experiment_num_cutoff={}".format(self.per_replicate_each_condition_num_cutoff, self.per_replicate_presort_condition_num_cutoff, self.per_replicate_all_condition_num_cutoff, self.all_replicate_num_cutoff, self.all_experiment_num_cutoff)
     
     def __repr__(self):
         return str(self)
@@ -107,12 +108,18 @@ class MillipedeDesignMatrixProcessingSpecification:
     K_enriched: float = 1
     K_baseline: float = 1
     a_parameter: float = 300
-
+    set_offset_as_default: bool = False
+    set_offset_as_total_reads: bool = False
+    set_offset_as_enriched: bool = False
+    set_offset_as_baseline: bool = False
+    set_offset_as_presort: bool = False
+    offset_normalized: bool = False
+    
     def __hash__(self):
-        return hash((self.wt_normalization, self.total_normalization, self.sigma_scale_normalized, self.decay_sigma_scale, self.K_enriched, self.K_baseline, self.a_parameter))
+        return hash((self.wt_normalization, self.total_normalization, self.sigma_scale_normalized, self.decay_sigma_scale, self.K_enriched, self.K_baseline, self.a_parameter, self.set_offset_as_default, self.set_offset_as_total_reads, self.set_offset_as_enriched, self.set_offset_as_baseline, self.set_offset_as_presort, self.offset_normalized))
     
     def __str__(self):
-        return f"wt_normalization={self.wt_normalization};total_normalization={self.total_normalization};sigma_scale_normalized={self.sigma_scale_normalized};decay_sigma_scale={self.decay_sigma_scale};K_enriched={self.K_enriched};K_baseline={self.K_baseline};a_parameter={self.a_parameter}"
+        return f"wt_normalization={self.wt_normalization};total_normalization={self.total_normalization};sigma_scale_normalized={self.sigma_scale_normalized};decay_sigma_scale={self.decay_sigma_scale};K_enriched={self.K_enriched};K_baseline={self.K_baseline};a_parameter={self.a_parameter}; set_offset_as_default={self.set_offset_as_default}, set_offset_as_total_reads={self.set_offset_as_total_reads}, set_offset_as_enriched={self.set_offset_as_enriched}, set_offset_as_baseline={self.set_offset_as_baseline}, set_offset_as_presort={self.set_offset_as_presort}, offset_normalized={self.offset_normalized}"
     
     def __repr__(self):
         return str(self)
@@ -157,6 +164,8 @@ class MillipedeInputData:
     enriched_pop_df_reads_colname: str
     baseline_pop_fn_experiment_list: List[str]
     baseline_pop_df_reads_colname: str
+    presort_pop_fn_experiment_list: Optional[List[str]]
+    presort_pop_df_reads_colname: Optional[str]
     reps: List[int]
     cutoff_specification:MillipedeCutoffSpecification
     replicate_merge_strategy:MillipedeReplicateMergeStrategy

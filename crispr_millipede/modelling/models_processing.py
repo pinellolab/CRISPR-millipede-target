@@ -64,15 +64,8 @@ class MillipedeInputDataExperimentalGroup:
     experiment_labels: List[str]
     reps: List[int]
     millipede_model_specification_set: Mapping[str, MillipedeModelSpecification]
-    # NOTE 20240613: Commented out; Moved to MillipedeModelSpecification, can delete once tested
-    #wt_normalization: bool
-    #total_normalization: bool
-    #sigma_scale_normalized: bool
-    #decay_sigma_scale: bool
-    #K_enriched: float
-    #K_baseline: float 
-    #a_parameter: float
-
+    presort_pop_fn_experiment_list: Optional[List[str]] = None
+    presort_pop_df_reads_colname: Optional[str] = None
 
     """
         Generates the MillipedeInputData objects provided MillipedeModelSpecifications and other relevant parameters such as filepaths to the data tables, read thresholds, and labels.
@@ -90,6 +83,13 @@ class MillipedeInputDataExperimentalGroup:
         assert len(self.baseline_pop_fn_experiment_list) > 0, "Length of list baseline_pop_fn_experiment_list must not be 0"
         assert len(self.experiment_labels) > 0, "Length of list baseline_pop_fn_experiment_list must not be 0"
         assert len(self.enriched_pop_fn_experiment_list) == len(self.baseline_pop_fn_experiment_list)  == len(self.experiment_labels), "Length of enriched_pop_fn_experiment_list, baseline_pop_fn_experiment_list, and experiment_labels must be same length"
+
+        if self.presort_pop_fn_experiment_list is not None:
+            for fn in self.presort_pop_fn_experiment_list:
+                assert "{}" in fn, '"{}" must be in present in filename to designate replicate ID for string formating, original filename: ' + fn
+            assert len(self.presort_pop_fn_experiment_list) > 0, "Length of list presort_pop_fn_experiment_list must not be 0"
+            assert len(self.experiment_labels) == len(self.presort_pop_fn_experiment_list), "Length of enriched_pop_fn_experiment_list, baseline_pop_fn_experiment_list, and experiment_labels must be same length"
+
         print("Passed validation.")
         
         
@@ -100,15 +100,9 @@ class MillipedeInputDataExperimentalGroup:
             enriched_pop_df_reads_colname=self.enriched_pop_df_reads_colname, 
             baseline_pop_fn_experiment_list=self.baseline_pop_fn_experiment_list, 
             baseline_pop_df_reads_colname=self.baseline_pop_df_reads_colname, 
+            presort_pop_fn_experiment_list=self.presort_pop_fn_experiment_list, 
+            presort_pop_df_reads_colname=self.presort_pop_df_reads_colname, 
             reps=self.reps
-            # NOTE 20240613: Commented out; Moved to MillipedeModelSpecification, can delete once tested
-            #wt_normalization=self.wt_normalization,
-            #total_normalization=self.total_normalization,
-            #sigma_scale_normalized=self.sigma_scale_normalized,
-            #decay_sigma_scale=self.decay_sigma_scale,
-            #K_enriched=self.K_enriched,
-            #K_baseline=self.K_baseline,
-            #a_parameter=self.a_parameter
         )
         # This will be the variable containing the final dictionary with input design matrix for all specifications
         millipede_model_specification_set_with_data: Mapping[str, Tuple[MillipedeModelSpecification, MillipedeInputData]] = dict()
@@ -146,20 +140,14 @@ class MillipedeInputDataExperimentalGroup:
                    enriched_pop_df_reads_colname: str, 
                    baseline_pop_fn_experiment_list: List[str], 
                    baseline_pop_df_reads_colname: str, 
+                   presort_pop_fn_experiment_list: Optional[List[str]], 
+                   presort_pop_df_reads_colname: Optional[str], 
                    reps: List[int], 
                    replicate_merge_strategy:MillipedeReplicateMergeStrategy, 
                    experiment_merge_strategy:MillipedeExperimentMergeStrategy,
                    cutoff_specification: MillipedeCutoffSpecification,
                    design_matrix_processing_specification: MillipedeDesignMatrixProcessingSpecification,
                    shrinkage_input: Union[MillipedeShrinkageInput, None]
-                   # NOTE 20240613: Commented out; Moved to design_matrix_processing_specification, can delete once tested
-                   #wt_normalization: bool,
-                   #total_normalization: bool,
-                   #sigma_scale_normalized: bool,
-                   #decay_sigma_scale: bool,
-                   #K_enriched: float,
-                   #K_baseline: float,
-                   #a_parameter: float
                    ) -> MillipedeInputData:
         
         with warnings.catch_warnings(record=True) as w:
@@ -182,6 +170,10 @@ class MillipedeInputDataExperimentalGroup:
                 # Get the enriched_population and baseline_population for the experiment
                 enriched_pop_exp_fn = enriched_pop_fn_experiment_list[experiment_index]
                 baseline_pop_exp_fn = baseline_pop_fn_experiment_list[experiment_index]
+                
+                presort_pop_exp_fn = None
+                if presort_pop_fn_experiment_list is not None:
+                    presort_pop_exp_fn = presort_pop_fn_experiment_list[experiment_index]
             
                 # Iterate through each replicate of the experiment
                 # type List[pd.DataFrame] if relicates are combined
@@ -193,6 +185,12 @@ class MillipedeInputDataExperimentalGroup:
                     '''
                     enriched_pop_full_fn_exp_rep = (data_directory + '/' + enriched_pop_exp_fn).format(rep)
                     baseline_pop_full_fn_exp_rep = (data_directory + '/' + baseline_pop_exp_fn).format(rep)
+                    
+                    presort_pop_full_fn_exp_rep = None
+                    if presort_pop_exp_fn is not None:
+                        presort_pop_full_fn_exp_rep = (data_directory + '/' + presort_pop_exp_fn).format(rep)
+                        assert exists(presort_pop_full_fn_exp_rep), "File not found: {}".format(presort_pop_full_fn_exp_rep)
+
                     assert exists(enriched_pop_full_fn_exp_rep), "File not found: {}".format(enriched_pop_full_fn_exp_rep)
                     assert exists(baseline_pop_full_fn_exp_rep), "File not found: {}".format(baseline_pop_full_fn_exp_rep)
 
@@ -209,14 +207,29 @@ class MillipedeInputDataExperimentalGroup:
                     baseline_pop_exp_rep_df = baseline_pop_exp_rep_df[baseline_pop_nt_columns + [baseline_pop_df_reads_colname]]
 
                     assert set(enriched_pop_nt_columns) == set(baseline_pop_nt_columns), "Nucleotide columns between enriched and baseline dataframes must be equivalent - are these screening the same regions?"
+                    
+                    presort_pop_exp_rep_df = None
+                    if presort_pop_full_fn_exp_rep is not None:
+                        presort_pop_exp_rep_df = pd.read_csv(presort_pop_full_fn_exp_rep, sep='\t').fillna(value=0.0)
+                        presort_pop_nt_columns = [col for col in presort_pop_exp_rep_df.columns if ">" in col]
+                        presort_pop_exp_rep_df = presort_pop_exp_rep_df[presort_pop_nt_columns + [presort_pop_df_reads_colname]]
+                        assert set(enriched_pop_nt_columns) == set(presort_pop_nt_columns), "Nucleotide columns between presort and the  enriched/baseline dataframes must be equivalent - are these screening the same regions?"
+
+
+                    
                     nucleotide_ids = enriched_pop_nt_columns
 
                     # Concat the enriched and baseline population dataframes together
-                    merged_exp_rep_df: pd.DataFrame = pd.concat([enriched_pop_exp_rep_df, baseline_pop_exp_rep_df]).groupby(nucleotide_ids, as_index=False).sum()
+                    if presort_pop_full_fn_exp_rep is not None:
+                        merged_exp_rep_df: pd.DataFrame = pd.concat([enriched_pop_exp_rep_df, baseline_pop_exp_rep_df, presort_pop_exp_rep_df]).groupby(nucleotide_ids, as_index=False).sum()
+                    else:
+                        merged_exp_rep_df: pd.DataFrame = pd.concat([enriched_pop_exp_rep_df, baseline_pop_exp_rep_df]).groupby(nucleotide_ids, as_index=False).sum()
 
                     # filter based on the per_replicate_each_condition_num_cutoff
                     merged_exp_rep_df = merged_exp_rep_df[merged_exp_rep_df[baseline_pop_df_reads_colname] >= cutoff_specification.per_replicate_each_condition_num_cutoff]
                     merged_exp_rep_df = merged_exp_rep_df[merged_exp_rep_df[enriched_pop_df_reads_colname] >= cutoff_specification.per_replicate_each_condition_num_cutoff]
+                    if presort_pop_full_fn_exp_rep is not None:
+                        merged_exp_rep_df = merged_exp_rep_df[merged_exp_rep_df[presort_pop_df_reads_colname] >= cutoff_specification.per_replicate_presort_condition_num_cutoff]
                     merged_exp_rep_df['total_reads'] = merged_exp_rep_df[baseline_pop_df_reads_colname] + merged_exp_rep_df[enriched_pop_df_reads_colname]
 
                     # filter on total reads based on the per_replicate_all_condition_num_cutoff
@@ -224,7 +237,7 @@ class MillipedeInputDataExperimentalGroup:
                     merged_exp_rep_df = merged_exp_rep_df[merged_exp_rep_df["total_reads"] >= cutoff_specification.per_replicate_all_condition_num_cutoff]
                     
                     # Normalize counts
-                    merged_exp_rep_normalized_df: pd.DataFrame = self.__normalize_counts(merged_exp_rep_df, enriched_pop_df_reads_colname, baseline_pop_df_reads_colname, nucleotide_ids, design_matrix_processing_specification.wt_normalization, design_matrix_processing_specification.total_normalization)
+                    merged_exp_rep_normalized_df: pd.DataFrame = self.__normalize_counts(merged_exp_rep_df, enriched_pop_df_reads_colname, baseline_pop_df_reads_colname, nucleotide_ids, design_matrix_processing_specification.wt_normalization, design_matrix_processing_specification.total_normalization, presort_pop_df_reads_colname)
                     
                     # Add to the replicate list
                     exp_merged_rep_df_list.append(merged_exp_rep_normalized_df)
@@ -445,11 +458,18 @@ class MillipedeInputDataExperimentalGroup:
             __add_supporting_columns_partial = partial(self.__add_supporting_columns,
                                                        enriched_pop_df_reads_colname=enriched_pop_df_reads_colname,                               
                                                        baseline_pop_df_reads_colname= baseline_pop_df_reads_colname,
+                                                       presort_pop_df_reads_colname=presort_pop_df_reads_colname,
                                                        sigma_scale_normalized= design_matrix_processing_specification.sigma_scale_normalized,
                                                        decay_sigma_scale= design_matrix_processing_specification.decay_sigma_scale,
                                                        K_enriched=design_matrix_processing_specification.K_enriched,
                                                        K_baseline=design_matrix_processing_specification.K_baseline,
-                                                       a_parameter=design_matrix_processing_specification.a_parameter
+                                                       a_parameter=design_matrix_processing_specification.a_parameter,
+                                                       set_offset_as_default=design_matrix_processing_specification.set_offset_as_default,
+                                                       set_offset_as_total_reads=design_matrix_processing_specification.set_offset_as_total_reads,
+                                                       set_offset_as_enriched=design_matrix_processing_specification.set_offset_as_enriched,
+                                                       set_offset_as_baseline=design_matrix_processing_specification.set_offset_as_baseline,
+                                                       set_offset_as_presort=design_matrix_processing_specification.set_offset_as_presort,
+                                                       offset_normalized=design_matrix_processing_specification.offset_normalized
                                                       )
             
 
@@ -526,6 +546,8 @@ class MillipedeInputDataExperimentalGroup:
                 enriched_pop_df_reads_colname=enriched_pop_df_reads_colname, 
                 baseline_pop_fn_experiment_list=baseline_pop_fn_experiment_list,
                 baseline_pop_df_reads_colname=baseline_pop_df_reads_colname, 
+                presort_pop_fn_experiment_list=presort_pop_fn_experiment_list,
+                presort_pop_df_reads_colname=presort_pop_df_reads_colname, 
                 reps=reps, 
                 replicate_merge_strategy=replicate_merge_strategy, 
                 experiment_merge_strategy=experiment_merge_strategy,
@@ -556,13 +578,17 @@ class MillipedeInputDataExperimentalGroup:
                           baseline_pop_df_reads_colname: str,
                           nucleotide_ids: List[str],
                           wt_normalization: bool,
-                          total_normalization: bool) -> pd.DataFrame:
+                          total_normalization: bool,
+                          presort_pop_df_reads_colname: Optional[str]=None) -> pd.DataFrame:
         # TODO 5/15/23: Normalization is set to True always! Make it an input variable. Also, it should directly change the count rather than just the score
         # TODO 5/15/23: Also, allow normalization either by library size or by WT reads. For now, will just do WT reads
         
         # Original
         enriched_read_counts = encoding_df[enriched_pop_df_reads_colname]
         baseline_read_counts = encoding_df[baseline_pop_df_reads_colname]
+        
+        if presort_pop_df_reads_colname is not None:
+            presort_read_counts = encoding_df[presort_pop_df_reads_colname]
         # IMPORTANT NOTE 5/15/23: Not updated the total_reads column since this column is used for the sigma_scale_factor
         
         # Perform normalization based on WT allele count
@@ -572,6 +598,7 @@ class MillipedeInputDataExperimentalGroup:
 
             wt_enriched_read_count = wt_allele_df[enriched_pop_df_reads_colname][0]
             wt_baseline_read_count = wt_allele_df[baseline_pop_df_reads_colname][0]
+                
             
             enriched_read_counts = enriched_read_counts * (wt_baseline_read_count / wt_enriched_read_count)
             baseline_read_counts = baseline_read_counts
@@ -582,6 +609,12 @@ class MillipedeInputDataExperimentalGroup:
 
             encoding_df[enriched_pop_df_reads_colname] = enriched_read_counts
             encoding_df[baseline_pop_df_reads_colname] = baseline_read_counts
+
+            if presort_pop_df_reads_colname is not None:
+                wt_presort_read_count = wt_allele_df[presort_pop_df_reads_colname][0]
+                presort_read_counts = presort_read_counts * (wt_baseline_read_count / wt_presort_read_count)
+                encoding_df[presort_pop_df_reads_colname + "_raw"] = encoding_df[presort_pop_df_reads_colname]
+                encoding_df[presort_pop_df_reads_colname] = presort_read_counts
         
         elif total_normalization:  
             total_enriched_read_count = sum(enriched_read_counts)
@@ -596,9 +629,17 @@ class MillipedeInputDataExperimentalGroup:
             
             encoding_df[enriched_pop_df_reads_colname] = enriched_read_counts
             encoding_df[baseline_pop_df_reads_colname] = baseline_read_counts
+
+            if presort_pop_df_reads_colname is not None:
+                total_presort_read_count = sum(presort_read_counts)
+                presort_read_counts = presort_read_counts / total_presort_read_count
+                encoding_df[presort_pop_df_reads_colname + "_raw"] = encoding_df[presort_pop_df_reads_colname]
+                encoding_df[presort_pop_df_reads_colname] = presort_read_counts
         else:
             encoding_df[enriched_pop_df_reads_colname + "_raw"] = encoding_df[enriched_pop_df_reads_colname]
             encoding_df[baseline_pop_df_reads_colname + "_raw"] = encoding_df[baseline_pop_df_reads_colname]
+            if presort_pop_df_reads_colname is not None:
+                encoding_df[presort_pop_df_reads_colname + "_raw"] = encoding_df[presort_pop_df_reads_colname]
         
         return encoding_df
 
@@ -606,11 +647,18 @@ class MillipedeInputDataExperimentalGroup:
                                  encoding_df: pd.DataFrame, 
                                  enriched_pop_df_reads_colname: str, 
                                  baseline_pop_df_reads_colname: str,
+                                 presort_pop_df_reads_colname: Optional[str],
                                  sigma_scale_normalized: bool,
                                  decay_sigma_scale: bool,
                                  K_enriched: float,
                                  K_baseline: float,
-                                 a_parameter: float
+                                 a_parameter: float,
+                                 set_offset_as_default: bool,
+                                 set_offset_as_total_reads: bool,
+                                 set_offset_as_enriched: bool,
+                                 set_offset_as_baseline: bool,
+                                 set_offset_as_presort: bool,
+                                 offset_normalized: bool
                                 ) -> pd.DataFrame:
         # construct the simplest possible continuous-valued response variable.
         # this response variable is in [-1, 1]
@@ -637,7 +685,31 @@ class MillipedeInputDataExperimentalGroup:
                     encoding_df['scale_factor'] = ((decay_function(encoding_df[enriched_pop_df_reads_colname + "_raw"], K_enriched, a_parameter)) + (decay_function(encoding_df[baseline_pop_df_reads_colname + "_raw"], K_baseline, a_parameter)))/2  # NOTE: Intentionally keeping the total_reads as the raw to avoid being impact by normalization - this could be subject to change
                 else:
                     encoding_df['scale_factor'] = (K_enriched / np.sqrt(encoding_df[enriched_pop_df_reads_colname + "_raw"])) + (K_baseline / np.sqrt(encoding_df[baseline_pop_df_reads_colname + "_raw"]))
-                        
+
+        if 'psi0' not in encoding_df.columns:
+            if set_offset_as_default:
+                encoding_df['psi0'] = 0
+            elif set_offset_as_total_reads:
+                if offset_normalized:
+                    encoding_df['psi0'] = np.log(enriched_read_counts + baseline_read_counts)
+                else:
+                    encoding_df['psi0'] = np.log(encoding_df["total_reads"])
+            elif set_offset_as_enriched:
+                if offset_normalized:
+                    encoding_df['psi0'] = np.log(enriched_read_counts)
+                else:
+                    encoding_df['psi0'] = np.log(encoding_df[enriched_pop_df_reads_colname + "_raw"])
+            elif set_offset_as_baseline:
+                if offset_normalized:
+                    encoding_df['psi0'] = np.log(baseline_read_counts)
+                else:
+                    encoding_df['psi0'] = np.log(encoding_df[baseline_pop_df_reads_colname + "_raw"])
+            elif set_offset_as_presort:
+                if offset_normalized:
+                    encoding_df['psi0'] = np.log(encoding_df[presort_pop_df_reads_colname])
+                else:
+                    encoding_df['psi0'] = np.log(encoding_df[presort_pop_df_reads_colname + "_raw"])
+
         return encoding_df
     
     def __get_intercept_df(self, encoding_df_list: List[pd.DataFrame], experiment_id: Optional[int] = None) -> pd.DataFrame:
@@ -779,7 +851,7 @@ class MillipedeModelExperimentalGroup:
         tau = millipede_model_specification.tau
         tau_intercept = millipede_model_specification.tau_intercept
         print("Iterating through all {} provided models: ".format(len(model_types), model_types))
-        models: Mapping[MillipedeModelType, Union[NormalLikelihoodVariableSelector, BinomialLikelihoodVariableSelector]] = {}
+        models: Mapping[MillipedeModelType, Union[NormalLikelihoodVariableSelector, BinomialLikelihoodVariableSelector, NegativeBinomialLikelihoodVariableSelector]] = {}
         for i, model_type in enumerate(millipede_model_specification.model_types):
             if model_type == MillipedeModelType.NORMAL:
                 print("Preparing data for model {}, {}/{}".format(model_type.value, i+1, len(model_types)))
@@ -838,6 +910,23 @@ class MillipedeModelExperimentalGroup:
                 binomial_selector.run(T=5000, T_burnin=500, verbosity='bar', seed=0)
                 models[model_type] = binomial_selector
 
+            elif model_type == MillipedeModelType.NEGATIVE_BINOMIAL:
+                print("Preparing data for model {}, {}/{}".format(model_type.value, i+1, len(model_types)))
+                required_columns = intercept_columns + nucleotide_ids + [millipede_input_data.enriched_pop_df_reads_colname, "psi0"]
+                sub_data_design_matrix = full_data_design_matrix[required_columns]    
+                negative_binomial_selector = NegativeBinomialLikelihoodVariableSelector(sub_data_design_matrix, 
+                                                                       response_column=millipede_input_data.enriched_pop_df_reads_colname,
+                                                                       psi0_column='psi0',
+                                                                       assumed_columns=intercept_columns,
+                                                                       S=S, 
+                                                                       tau=tau,
+                                                                       tau_intercept=tau_intercept,
+                                                                       precision="double", 
+                                                                       device=device.value)
+
+                print("Running model {}".format(model_type.value))
+                negative_binomial_selector.run(T=5000, T_burnin=500, verbosity='bar', seed=0)
+                models[model_type] = negative_binomial_selector
             else:
                 logging.warning("Unsupported MillipedeModelType '{}', perhaps use a different supported model type".format(model_type))
         

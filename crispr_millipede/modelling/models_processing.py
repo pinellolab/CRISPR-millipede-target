@@ -469,7 +469,8 @@ class MillipedeInputDataExperimentalGroup:
                                                        set_offset_as_enriched=design_matrix_processing_specification.set_offset_as_enriched,
                                                        set_offset_as_baseline=design_matrix_processing_specification.set_offset_as_baseline,
                                                        set_offset_as_presort=design_matrix_processing_specification.set_offset_as_presort,
-                                                       offset_normalized=design_matrix_processing_specification.offset_normalized
+                                                       offset_normalized=design_matrix_processing_specification.offset_normalized,
+                                                       offset_psuedocount=design_matrix_processing_specification.offset_psuedocount
                                                       )
             
 
@@ -658,7 +659,8 @@ class MillipedeInputDataExperimentalGroup:
                                  set_offset_as_enriched: bool,
                                  set_offset_as_baseline: bool,
                                  set_offset_as_presort: bool,
-                                 offset_normalized: bool
+                                 offset_normalized: bool,
+                                 offset_psuedocount: int
                                 ) -> pd.DataFrame:
         # construct the simplest possible continuous-valued response variable.
         # this response variable is in [-1, 1]
@@ -691,25 +693,25 @@ class MillipedeInputDataExperimentalGroup:
                 encoding_df['psi0'] = 0
             elif set_offset_as_total_reads:
                 if offset_normalized:
-                    encoding_df['psi0'] = np.log(enriched_read_counts + baseline_read_counts)
+                    encoding_df['psi0'] = np.log(enriched_read_counts + baseline_read_counts + offset_psuedocount)
                 else:
-                    encoding_df['psi0'] = np.log(encoding_df["total_reads"])
+                    encoding_df['psi0'] = np.log(encoding_df["total_reads"] + offset_psuedocount)
             elif set_offset_as_enriched:
                 if offset_normalized:
-                    encoding_df['psi0'] = np.log(enriched_read_counts)
+                    encoding_df['psi0'] = np.log(enriched_read_counts + offset_psuedocount)
                 else:
-                    encoding_df['psi0'] = np.log(encoding_df[enriched_pop_df_reads_colname + "_raw"])
+                    encoding_df['psi0'] = np.log(encoding_df[enriched_pop_df_reads_colname + "_raw"] + offset_psuedocount)
             elif set_offset_as_baseline:
                 if offset_normalized:
-                    encoding_df['psi0'] = np.log(baseline_read_counts)
+                    encoding_df['psi0'] = np.log(baseline_read_counts + offset_psuedocount)
                 else:
-                    encoding_df['psi0'] = np.log(encoding_df[baseline_pop_df_reads_colname + "_raw"])
+                    encoding_df['psi0'] = np.log(encoding_df[baseline_pop_df_reads_colname + "_raw"] + offset_psuedocount)
             elif set_offset_as_presort:
                 if offset_normalized:
-                    encoding_df['psi0'] = np.log(encoding_df[presort_pop_df_reads_colname])
+                    encoding_df['psi0'] = np.log(encoding_df[presort_pop_df_reads_colname] + offset_psuedocount)
                 else:
-                    encoding_df['psi0'] = np.log(encoding_df[presort_pop_df_reads_colname + "_raw"])
-
+                    encoding_df['psi0'] = np.log(encoding_df[presort_pop_df_reads_colname + "_raw"] + offset_psuedocount)
+            assert np.all(np.isfinite(encoding_df['psi0'])), "NaN or inf psi0 offset values, perhaps due to 0 read counts. Consider setting cutoff_specifications or offset_psuedocount deepending on offset strategy (i.e. if set_offset_as_presort==True, then could set offset_psuedocount>0 or per_replicate_presort_condition_num_cutoff>0)"
         return encoding_df
     
     def __get_intercept_df(self, encoding_df_list: List[pd.DataFrame], experiment_id: Optional[int] = None) -> pd.DataFrame:
@@ -776,7 +778,7 @@ class MillipedeModelExperimentalGroup:
             print("Number of single matrices: {}".format(num_single_matrices))
             print("With {} model types, the total models to inference for this model specification: {}".format(len(millipede_model_specification.model_types), num_single_matrices*len(millipede_model_specification.model_types)))
             
-            # Iterate through the data depending on its list structure, run models, and add to set
+            # Iterate through the data dependintwg on its list structure, run models, and add to set
             single_matrix_count = 0
             millipede_model_specification_result_input: Union[MillipedeModelSpecificationSingleMatrixResult, List[MillipedeModelSpecificationSingleMatrixResult], List[List[MillipedeModelSpecificationSingleMatrixResult]]] = None
             if isinstance(data, list):

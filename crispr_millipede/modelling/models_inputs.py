@@ -5,6 +5,7 @@ from enum import Enum
 import pandas as pd
 from millipede import NormalLikelihoodVariableSelector
 from millipede import BinomialLikelihoodVariableSelector
+from millipede import NegativeBinomialLikelihoodVariableSelector
 
 
 @dataclass
@@ -114,12 +115,13 @@ class MillipedeDesignMatrixProcessingSpecification:
     set_offset_as_baseline: bool = False
     set_offset_as_presort: bool = False
     offset_normalized: bool = False
+    offset_psuedocount: int = 0
     
     def __hash__(self):
-        return hash((self.wt_normalization, self.total_normalization, self.sigma_scale_normalized, self.decay_sigma_scale, self.K_enriched, self.K_baseline, self.a_parameter, self.set_offset_as_default, self.set_offset_as_total_reads, self.set_offset_as_enriched, self.set_offset_as_baseline, self.set_offset_as_presort, self.offset_normalized))
+        return hash((self.wt_normalization, self.total_normalization, self.sigma_scale_normalized, self.decay_sigma_scale, self.K_enriched, self.K_baseline, self.a_parameter, self.set_offset_as_default, self.set_offset_as_total_reads, self.set_offset_as_enriched, self.set_offset_as_baseline, self.set_offset_as_presort, self.offset_normalized, self.offset_psuedocount))
     
     def __str__(self):
-        return f"wt_normalization={self.wt_normalization};total_normalization={self.total_normalization};sigma_scale_normalized={self.sigma_scale_normalized};decay_sigma_scale={self.decay_sigma_scale};K_enriched={self.K_enriched};K_baseline={self.K_baseline};a_parameter={self.a_parameter}; set_offset_as_default={self.set_offset_as_default}, set_offset_as_total_reads={self.set_offset_as_total_reads}, set_offset_as_enriched={self.set_offset_as_enriched}, set_offset_as_baseline={self.set_offset_as_baseline}, set_offset_as_presort={self.set_offset_as_presort}, offset_normalized={self.offset_normalized}"
+        return f"wt_normalization={self.wt_normalization};total_normalization={self.total_normalization};sigma_scale_normalized={self.sigma_scale_normalized};decay_sigma_scale={self.decay_sigma_scale};K_enriched={self.K_enriched};K_baseline={self.K_baseline};a_parameter={self.a_parameter}; set_offset_as_default={self.set_offset_as_default}, set_offset_as_total_reads={self.set_offset_as_total_reads}, set_offset_as_enriched={self.set_offset_as_enriched}, set_offset_as_baseline={self.set_offset_as_baseline}, set_offset_as_presort={self.set_offset_as_presort}, offset_normalized={self.offset_normalized}, offset_psuedocount={self.offset_psuedocount}"
     
     def __repr__(self):
         return str(self)
@@ -174,7 +176,7 @@ class MillipedeInputData:
 
 @dataclass
 class MillipedeModelSpecificationSingleMatrixResult:
-    millipede_model_specification_single_matrix_result: Mapping[MillipedeModelType, Union[NormalLikelihoodVariableSelector, BinomialLikelihoodVariableSelector]]
+    millipede_model_specification_single_matrix_result: Mapping[MillipedeModelType, Union[NormalLikelihoodVariableSelector, BinomialLikelihoodVariableSelector, NegativeBinomialLikelihoodVariableSelector]]
         
 @dataclass
 class MillipedeModelSpecificationResult:

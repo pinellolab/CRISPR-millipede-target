@@ -236,18 +236,58 @@ class MillipedeInputDataExperimentalGroup:
                     total_alleles_pre_filter = merged_exp_rep_df.values.shape[0]
                     merged_exp_rep_df = merged_exp_rep_df[merged_exp_rep_df["total_reads"] >= cutoff_specification.per_replicate_all_condition_num_cutoff]
                     
-                    # Normalize counts
-                    merged_exp_rep_normalized_df: pd.DataFrame = self.__normalize_counts(merged_exp_rep_df, enriched_pop_df_reads_colname, baseline_pop_df_reads_colname, nucleotide_ids, design_matrix_processing_specification.wt_normalization, design_matrix_processing_specification.total_normalization, presort_pop_df_reads_colname)
-                    
                     # Add to the replicate list
-                    exp_merged_rep_df_list.append(merged_exp_rep_normalized_df)
-                    
+                    exp_merged_rep_df_list.append(merged_exp_rep_df)
+
+
+
+                # TODO: Perform normalization after per-condition and all-condition filtering
+                '''
+                    Per-condition filtering
+                ''' 
+                # Add a temporary replicate_id to columns for easy de-concatenation
+                for rep_i, merged_exp_rep_df in exp_merged_rep_df_list:
+                    merged_exp_rep_df["rep_i"] = rep_i
+
+                # Concatenate the replicates together to then perform a groupby across all replicates for filtering
+                merged_exp_reps_df: pd.DataFrame = pd.concat(exp_merged_rep_df_list)    
+                
+                # Per-condition filtering
+                if (cutoff_specification.baseline_pop_per_condition_each_replicate_num_cutoff > 0) and (cutoff_specification.baseline_pop_per_condition_missing_rep_count < len(reps)):
+                    merged_exp_reps_df = merged_exp_reps_df.groupby(nucleotide_ids, as_index=False).filter(lambda df: sum(df[baseline_pop_df_reads_colname] <= cutoff_specification.baseline_pop_per_condition_each_replicate_num_cutoff) <= cutoff_specification.baseline_pop_per_condition_missing_rep_count)
+                if (cutoff_specification.enriched_pop_per_condition_each_replicate_num_cutoff > 0) and (cutoff_specification.enriched_pop_per_condition_missing_rep_count < len(reps)):
+                    merged_exp_reps_df = merged_exp_reps_df.groupby(nucleotide_ids, as_index=False).filter(lambda df: sum(df[enriched_pop_df_reads_colname] <= cutoff_specification.enriched_pop_per_condition_each_replicate_num_cutoff) <= cutoff_specification.enriched_pop_per_condition_missing_rep_count)
+                if (cutoff_specification.presort_pop_per_condition_each_replicate_num_cutoff > 0) and (cutoff_specification.presort_pop_per_condition_missing_rep_count < len(reps)):
+                    merged_exp_reps_df = merged_exp_reps_df.groupby(nucleotide_ids, as_index=False).filter(lambda df: sum(df[presort_pop_df_reads_colname] <= cutoff_specification.presort_pop_per_condition_each_replicate_num_cutoff) <= cutoff_specification.presort_pop_per_condition_missing_rep_count)
+
+
+                # All-condition filtering
+                def all_condition_filter_func(df: pd.DataFrame):
+                    (sum(df[baseline_pop_df_reads_colname] <= cutoff_specification.baseline_pop_all_condition_each_replicate_num_cutoff) <= cutoff_specification.baseline_pop_all_condition_missing_rep_count) | (sum(df[enriched_pop_df_reads_colname] <= cutoff_specification.enriched_pop_all_condition_each_replicate_num_cutoff) <= cutoff_specification.enriched_pop_all_condition_missing_rep_count) | (sum(df[presort_pop_df_reads_colname] <= cutoff_specification.presort_pop_all_condition_each_replicate_num_cutoff) <= cutoff_specification.presort_pop_all_condition_missing_rep_count)
+                
+                merged_exp_reps_df = merged_exp_reps_df.groupby(nucleotide_ids, as_index=False).filter(all_condition_filter_func)
+
+                # De-concatenate back into separate replicate by groupby on temporary rep_i column
+                exp_merged_rep_df_list = [merged_exp_rep_df for _, merged_exp_rep_df in merged_exp_reps_df.groupby("rep_i")]
+
+
+
+                '''
+                    Perform normalization after filtering
+                '''
+                def normalize_func(merged_exp_rep_df):
+                    merged_exp_rep_normalized_df: pd.DataFrame = self.__normalize_counts(merged_exp_rep_df, enriched_pop_df_reads_colname, baseline_pop_df_reads_colname, nucleotide_ids, design_matrix_processing_specification.wt_normalization, design_matrix_processing_specification.total_normalization, presort_pop_df_reads_colname) 
+                    return merged_exp_rep_normalized_df
+                exp_merged_rep_df_list = [normalize_func(merged_exp_rep_df) for merged_exp_rep_df in exp_merged_rep_df_list]
+                
+
                 '''
                     Handle all replicates depending on provided strategy
                 '''
                 # If replicate_merge_strategy is SUM, sum the replicates together 
                 if replicate_merge_strategy == MillipedeReplicateMergeStrategy.SUM:
                     nucleotide_ids = [col for col in exp_merged_rep_df_list[0].columns if ">" in col]
+
                     merged_exp_reps_df: pd.DataFrame = pd.concat(exp_merged_rep_df_list).groupby(nucleotide_ids, as_index=False).sum() 
                     merged_exp_reps_df: pd.DataFrame = merged_exp_reps_df[merged_exp_reps_df["total_reads"] >= cutoff_specification.all_replicate_num_cutoff] # Filter
                     merged_experiment_df_list.append(merged_exp_reps_df)

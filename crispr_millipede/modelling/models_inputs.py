@@ -87,6 +87,21 @@ class MillipedeCutoffSpecification:
     per_replicate_each_condition_num_cutoff:int = 0
     per_replicate_presort_condition_num_cutoff:int = 0
     per_replicate_all_condition_num_cutoff:int = 0 
+    baseline_pop_per_condition_each_replicate_num_cutoff = 0
+    
+    baseline_pop_per_condition_missing_rep_count = 1
+    enriched_pop_per_condition_each_replicate_num_cutoff = 0
+    enriched_pop_per_condition_missing_rep_count = 1
+    presort_pop_per_condition_each_replicate_num_cutoff = 0
+    presort_pop_per_condition_missing_rep_count = 1
+    
+    baseline_pop_all_condition_each_replicate_num_cutoff = 0
+    baseline_pop_all_condition_missing_rep_count = 1
+    enriched_pop_all_condition_each_replicate_num_cutoff = 0
+    enriched_pop_all_condition_missing_rep_count = 1
+    presort_pop_all_condition_each_replicate_num_cutoff = 0
+    presort_pop_all_condition_missing_rep_count = 1
+    
     all_replicate_num_cutoff:int = 2
     all_experiment_num_cutoff:int = 0
     column_removal_proportion: Optional[float] = None

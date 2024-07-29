@@ -75,7 +75,6 @@ def parse_row(row, original_seq):
 @dataclass
 class EncodingParameters:
     complete_amplicon_sequence: str
-    read_length: int
     population_baseline_suffix: Optional[str] = "_baseline"
     population_target_suffix: Optional[str] = "_target"
     population_presort_suffix: Optional[str] = "_presort"
@@ -83,6 +82,8 @@ class EncodingParameters:
     guide_edit_positions: List[int] = field(default_factory=list)
     guide_window_halfsize: int = 3
     variant_types: List[Tuple[str, str]] = field(default_factory=list)
+    trim_left: int = 0
+    trim_right: int = 0
 
 
 @dataclass
@@ -130,9 +131,12 @@ class EncodingDataFrames:
 
 
     def postprocess_encoding(self):
-        def trim_edges(trim_left=25, trim_right=25):
-            # TODO
-            pass
+        def trim_edges(encoding_df, trim_left, trim_right):
+            position_indices = encoding_df.columns.get_level_values("Position").astype(int) # Get positions of each column (there will be no read column, this is added in function add_read_column)
+            position_left_boundary = min(position_indices) + trim_left
+            position_right_boundary = max(position_indices) - trim_right
+            return encoding_df.iloc[:, (position_indices >= position_left_boundary) & (position_indices <= position_right_boundary)]
+        
         def process_encoding(encoding_set):
             for encoding_df in encoding_set:
                 encoding_df.columns = encoding_df.columns.get_level_values("FullChange")
@@ -142,7 +146,6 @@ class EncodingDataFrames:
 
         # Remember to consider strand, spotcheck. Use +6 window size for ABE, +13 window size for evoCDA. +6 window peak
         def denoise_encodings(encoded_dfs, guide_edit_positions: List[int] = [], guide_window_halfsize: int = 3, variant_types: List[Tuple[str, str]] = []):
-            
             if (len(guide_edit_positions) > 0) or (len(variant_types) > 0): # If guide positions or variant types are provided, proceed with denoising
                 print(f"Denoising with positions {guide_edit_positions} and variant types {variant_types}")
                 encoded_dfs_denoised: List[pd.DataFrame] = []
@@ -196,6 +199,16 @@ class EncodingDataFrames:
         self.population_target_encoding_processed = None if self.population_target_encoding is None else copy.deepcopy(self.population_target_encoding)
         self.population_presort_encoding_processed = None if self.population_presort_encoding is None else copy.deepcopy(self.population_presort_encoding)
         self.population_wt_encoding_processed = None if self.population_wt_encoding is None else copy.deepcopy(self.population_wt_encoding)
+
+        # Trim encodings
+        if (self.encoding_parameters.trim_left > 0) or (self.encoding_parameters.trim_right > 0):
+            print(f"Trimming encodings with trim_left={self.encoding_parameters.trim_left} and trim_right={self.encoding_parameters.trim_right}")
+            self.population_baseline_encoding_processed = trim_edges(self.population_baseline_encoding_processed, self.encoding_parameters.trim_left, self.encoding_parameters.trim_right)
+            self.population_target_encoding_processed = trim_edges(self.population_target_encoding_processed, self.encoding_parameters.trim_left, self.encoding_parameters.trim_right)
+            self.population_presort_encoding_processed = trim_edges(self.population_presort_encoding_processed, self.encoding_parameters.trim_left, self.encoding_parameters.trim_right)
+            self.population_wt_encoding_processed = trim_edges(self.population_wt_encoding_processed, self.encoding_parameters.trim_left, self.encoding_parameters.trim_right)
+
+
 
         # Process encodings
         print("Processing encoding columns")

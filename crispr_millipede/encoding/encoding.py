@@ -166,7 +166,7 @@ class EncodingDataFrames:
                         noneditable_colnames_position = [colname_feature[3] for colname_feature in colname_features if colname_feature[0] not in editable_positions]  # select positions that do not contain position
                         encoded_df_rep[noneditable_colnames_position] = 0
                     if len(variant_types) > 0: # Filter by type
-                        noneditable_colnames_variants = [colname_feature[3] for colname_feature in colname_features if np.any([(colname_feature[1]!=variant_type[0]) or (colname_feature[2]!=variant_type[1]) for variant_type in variant_types])] # Select features that does not contain a variant type
+                        noneditable_colnames_variants = [colname_feature[3] for colname_feature in colname_features if np.all([(colname_feature[1]!=variant_type[0]) or (colname_feature[2]!=variant_type[1]) for variant_type in variant_types])] # Select features that does not contain a variant type
                         encoded_df_rep[noneditable_colnames_variants] = 0
                     
                     encoded_dfs_denoised.append(encoded_df_rep)

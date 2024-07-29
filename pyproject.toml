@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "crispr-millipede"
-version = "0.1.74"
+version = "0.1.75"
 description = ""
 authors = ["Basheer Becerra <bbecerr@outlook.com>"]
 readme = "README.md"

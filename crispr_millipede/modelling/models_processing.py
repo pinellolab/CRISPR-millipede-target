@@ -263,7 +263,7 @@ class MillipedeInputDataExperimentalGroup:
 
                 # All-condition filtering
                 def all_condition_filter_func(df: pd.DataFrame):
-                    (sum(df[baseline_pop_df_reads_colname] <= cutoff_specification.baseline_pop_all_condition_each_replicate_num_cutoff) <= cutoff_specification.baseline_pop_all_condition_missing_rep_count) | (sum(df[enriched_pop_df_reads_colname] <= cutoff_specification.enriched_pop_all_condition_each_replicate_num_cutoff) <= cutoff_specification.enriched_pop_all_condition_missing_rep_count) | (sum(df[presort_pop_df_reads_colname] <= cutoff_specification.presort_pop_all_condition_each_replicate_num_cutoff) <= cutoff_specification.presort_pop_all_condition_missing_rep_count)
+                    return (sum(df[baseline_pop_df_reads_colname] <= cutoff_specification.baseline_pop_all_condition_each_replicate_num_cutoff) <= cutoff_specification.baseline_pop_all_condition_missing_rep_count) | (sum(df[enriched_pop_df_reads_colname] <= cutoff_specification.enriched_pop_all_condition_each_replicate_num_cutoff) <= cutoff_specification.enriched_pop_all_condition_missing_rep_count) | (sum(df[presort_pop_df_reads_colname] <= cutoff_specification.presort_pop_all_condition_each_replicate_num_cutoff) <= cutoff_specification.presort_pop_all_condition_missing_rep_count)
                 
                 merged_exp_reps_df = merged_exp_reps_df.groupby(nucleotide_ids, as_index=False).filter(all_condition_filter_func)
 
@@ -954,10 +954,10 @@ class MillipedeModelExperimentalGroup:
 
             elif model_type == MillipedeModelType.NEGATIVE_BINOMIAL:
                 print("Preparing data for model {}, {}/{}".format(model_type.value, i+1, len(model_types)))
-                required_columns = intercept_columns + nucleotide_ids + [millipede_input_data.enriched_pop_df_reads_colname, "psi0"]
+                required_columns = intercept_columns + nucleotide_ids + [millipede_input_data.enriched_pop_df_reads_colname + "_raw", "psi0"]
                 sub_data_design_matrix = full_data_design_matrix[required_columns]    
                 negative_binomial_selector = NegativeBinomialLikelihoodVariableSelector(sub_data_design_matrix, 
-                                                                       response_column=millipede_input_data.enriched_pop_df_reads_colname,
+                                                                       response_column=millipede_input_data.enriched_pop_df_reads_colname + "_raw",
                                                                        psi0_column='psi0',
                                                                        assumed_columns=intercept_columns,
                                                                        S=S, 

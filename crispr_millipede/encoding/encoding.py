@@ -81,9 +81,12 @@ class EncodingParameters:
     wt_suffix: Optional[str] = "_wt"
     guide_edit_positions: List[int] = field(default_factory=list)
     guide_window_halfsize: int = 3
+    minimum_editing_frequency: float = 0
+    minimum_editing_frequency_population: List[str] = ["_baseline", "_target", "_presort"]
     variant_types: List[Tuple[str, str]] = field(default_factory=list)
     trim_left: int = 0
     trim_right: int = 0
+    remove_denoised: bool = False
 
 
 @dataclass
@@ -145,36 +148,63 @@ class EncodingDataFrames:
                 encoded_dfs[i]["#Reads{}".format(suffix)] = original_dfs_rep["#Reads"]
 
         # Remember to consider strand, spotcheck. Use +6 window size for ABE, +13 window size for evoCDA. +6 window peak
-        def denoise_encodings(encoded_dfs, guide_edit_positions: List[int] = [], guide_window_halfsize: int = 3, variant_types: List[Tuple[str, str]] = []):
+        def denoise_encodings(encoded_dfs, guide_edit_positions: List[int] = [], guide_window_halfsize: int = 3, variant_types: List[Tuple[str, str]] = [], remove_denoised: bool = False, minimum_editing_frequency: float = 0, minimum_editing_frequency_population: List[str] = []):
             if (len(guide_edit_positions) > 0) or (len(variant_types) > 0): # If guide positions or variant types are provided, proceed with denoising
                 print(f"Denoising with positions {guide_edit_positions} and variant types {variant_types}")
-                encoded_dfs_denoised: List[pd.DataFrame] = []
 
-                # For each replicate encoding
+                filtered_nucleotide_ids_list: List[str] = []
+                # For each replicate encoding, get columns to denoise
                 for encoded_df_rep in encoded_dfs:
 
                     # Get the positions from the column names
                     feature_colnames: List[str] = [name for name in list(encoded_df_rep.columns) if "#Reads" not in name] # List of non-"read" unparsed columns
+                    read_colnames: List[str] = [name for name in list(encoded_df_rep.columns) if "#Reads" in name] # List of "read" columns
+
                     parse_feature = lambda feature : (int(feature[0:feature.index(">")-1]),feature[feature.index(">")-1:feature.index(">")], feature[feature.index(">")+1:], feature)
                     colname_features: List[Tuple[int, str, str, str]] = [parse_feature(feature) for feature in feature_colnames] # List of positions
 
                     # Get editable positions - we want to remove variants not in these positions
                     editable_positions: List[int] = [editable_position for guide_edit_position in guide_edit_positions for editable_position in range(guide_edit_position-guide_window_halfsize, guide_edit_position+guide_window_halfsize+1)]
+                    
+                    # Get list of features that are below the minimum editing frequency
+                    if (minimum_editing_frequency > 0) and (len(minimum_editing_frequency_population) > 0):
+                        for population in minimum_editing_frequency_population:
+                            # Get read column and assert it exists in the dataframe
+                            population_read_column = f"#Reads_{population}"
+                            assert population_read_column in read_colnames, f"Read column {population_read_column} does not exist do perform minimum editing thresholding, check the parameters of minimum_editing_frequency_population and ensure they are consistent with the population suffixes."
+                            
+                            # Calculate per-variant allele frequency
+                            variant_reads = encoded_df_rep.loc[:, feature_colnames].mul(encoded_df_rep[population_read_column], axis=0).sum(axis=0)
+                            variant_af = variant_reads.astype(float).mul(1./encoded_df_rep[population_read_column].sum())
+                            variant_af[variant_af.isna()] = 0
 
-                    # Get the features to denoise/remove
+                            filtered_nucleotide_ids = variant_af[variant_af<minimum_editing_frequency].index.to_list()
+                            filtered_nucleotide_ids_list.extend(filtered_nucleotide_ids)
+
+                    # Get the features to denoise/remove by position and variant type
                     if editable_positions: # Filter by position
                         noneditable_colnames_position = [colname_feature[3] for colname_feature in colname_features if colname_feature[0] not in editable_positions]  # select positions that do not contain position
-                        encoded_df_rep[noneditable_colnames_position] = 0
+                        filtered_nucleotide_ids_list.extend(noneditable_colnames_position)
                     if len(variant_types) > 0: # Filter by type
                         noneditable_colnames_variants = [colname_feature[3] for colname_feature in colname_features if np.all([(colname_feature[1]!=variant_type[0]) or (colname_feature[2]!=variant_type[1]) for variant_type in variant_types])] # Select features that does not contain a variant type
-                        encoded_df_rep[noneditable_colnames_variants] = 0
+                        filtered_nucleotide_ids_list.extend(noneditable_colnames_position)
                     
-                    encoded_dfs_denoised.append(encoded_df_rep)
+                # Perform denoising
+                encoded_dfs_denoised: List[pd.DataFrame] = []
+                filtered_nucleotide_ids_set = set(filtered_nucleotide_ids_list)
+                if len(filtered_nucleotide_ids_set) > 0:
+                    for encoded_df_rep in encoded_dfs:
+                        if remove_denoised:
+                            encoded_dfs_denoised.append(encoded_df_rep.drop(filtered_nucleotide_ids_set, axis=1))
+                        else:
+                            encoded_df_rep.loc[:, filtered_nucleotide_ids_set] = 0
+                            encoded_dfs_denoised.append(encoded_df_rep)
+                
                 return encoded_dfs_denoised
             else:
                 print("Not denoising sample")
                 return encoded_dfs
-            
+        
         def collapse_encodings(encoded_dfs):
             encoded_dfs_collapsed = []
             for encoded_df_rep in encoded_dfs:
@@ -231,11 +261,12 @@ class EncodingDataFrames:
 
         # Denoise encodings
         print("Performing denoising")
-        self.population_baseline_encoding_processed = denoise_encodings(self.population_baseline_encoding_processed, self.encoding_parameters.guide_edit_positions, self.encoding_parameters.guide_window_halfsize, self.encoding_parameters.variant_types)
-        self.population_target_encoding_processed = denoise_encodings(self.population_target_encoding_processed, self.encoding_parameters.guide_edit_positions, self.encoding_parameters.guide_window_halfsize, self.encoding_parameters.variant_types)
-        self.population_presort_encoding_processed = denoise_encodings(self.population_presort_encoding_processed, self.encoding_parameters.guide_edit_positions, self.encoding_parameters.guide_window_halfsize, self.encoding_parameters.variant_types)
-        self.population_wt_encoding_processed = denoise_encodings(self.population_wt_encoding_processed, self.encoding_parameters.guide_edit_positions, self.encoding_parameters.guide_window_halfsize, []) # NOTE: Passing no variant types for WT sample
+        self.population_baseline_encoding_processed = denoise_encodings(self.population_baseline_encoding_processed, self.encoding_parameters.guide_edit_positions, self.encoding_parameters.guide_window_halfsize, self.encoding_parameters.variant_types, self.encoding_parameters.remove_denoised, self.encoding_parameters.minimum_editing_frequency, self.encoding_parameters.minimum_editing_frequency_population)
+        self.population_target_encoding_processed = denoise_encodings(self.population_target_encoding_processed, self.encoding_parameters.guide_edit_positions, self.encoding_parameters.guide_window_halfsize, self.encoding_parameters.variant_types, self.encoding_parameters.remove_denoised, self.encoding_parameters.minimum_editing_frequency, self.encoding_parameters.minimum_editing_frequency_population)
+        self.population_presort_encoding_processed = denoise_encodings(self.population_presort_encoding_processed, self.encoding_parameters.guide_edit_positions, self.encoding_parameters.guide_window_halfsize, self.encoding_parameters.variant_types, self.encoding_parameters.remove_denoised, self.encoding_parameters.minimum_editing_frequency, self.encoding_parameters.minimum_editing_frequency_population)
+        self.population_wt_encoding_processed = denoise_encodings(self.population_wt_encoding_processed, self.encoding_parameters.guide_edit_positions, self.encoding_parameters.guide_window_halfsize, [], self.encoding_parameters.remove_denoised, self.encoding_parameters.minimum_editing_frequency, self.encoding_parameters.minimum_editing_frequency_population) # NOTE: Passing no variant types for WT sample
         
+
         # Collapse rows with same encodings, sum the reads together.
         print("Collapsing encoding")
         self.population_baseline_encoding_processed = collapse_encodings(self.population_baseline_encoding_processed)

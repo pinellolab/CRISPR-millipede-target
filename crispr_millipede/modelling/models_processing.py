@@ -41,7 +41,7 @@ def filter_columns_by_variant_frequency(input_design_df: pd.DataFrame, millipede
         # Perform filtering based on variant frequency
         selected_nucleotide_ids = variant_af[variant_af>=millipede_cutoff_specification.column_removal_proportion].index
         new_design_columns = selected_nucleotide_ids.append(pd.Index(non_nucleotide_ids))
-        input_design_df = input_design_df.loc[:, new_design_columns]               
+        input_design_df = input_design_df.loc[:, new_design_columns]     
         #print("After")
         #print(input_design_df)
 
@@ -246,7 +246,7 @@ class MillipedeInputDataExperimentalGroup:
                     Per-condition filtering
                 ''' 
                 # Add a temporary replicate_id to columns for easy de-concatenation
-                for rep_i, merged_exp_rep_df in exp_merged_rep_df_list:
+                for rep_i, merged_exp_rep_df in enumerate(exp_merged_rep_df_list):
                     merged_exp_rep_df["rep_i"] = rep_i
 
                 # Concatenate the replicates together to then perform a groupby across all replicates for filtering

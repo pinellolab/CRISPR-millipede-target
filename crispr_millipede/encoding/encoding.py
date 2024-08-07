@@ -82,7 +82,7 @@ class EncodingParameters:
     guide_edit_positions: List[int] = field(default_factory=list)
     guide_window_halfsize: int = 3
     minimum_editing_frequency: float = 0
-    minimum_editing_frequency_population: List[str] = ["_baseline", "_target", "_presort"]
+    minimum_editing_frequency_population: List[str] = field(default_factory=list)
     variant_types: List[Tuple[str, str]] = field(default_factory=list)
     trim_left: int = 0
     trim_right: int = 0
@@ -134,12 +134,16 @@ class EncodingDataFrames:
 
 
     def postprocess_encoding(self):
-        def trim_edges(encoding_df, trim_left, trim_right):
-            position_indices = encoding_df.columns.get_level_values("Position").astype(int) # Get positions of each column (there will be no read column, this is added in function add_read_column)
-            position_left_boundary = min(position_indices) + trim_left
-            position_right_boundary = max(position_indices) - trim_right
-            return encoding_df.iloc[:, (position_indices >= position_left_boundary) & (position_indices <= position_right_boundary)]
-        
+        def trim_edges(encoding_dfs: List[pd.DataFrame], trim_left: int, trim_right: int) -> List[pd.DataFrame]:
+            encoded_dfs_trimmed: List[pd.DataFrame] = []
+            for encoding_df in encoding_dfs:
+                position_indices = encoding_df.columns.get_level_values("Position").astype(int) # Get positions of each column (there will be no read column, this is added in function add_read_column)
+                position_left_boundary = min(position_indices) + trim_left
+                position_right_boundary = max(position_indices) - trim_right
+                encoded_df_trimmed = encoding_df.iloc[:, (position_indices >= position_left_boundary) & (position_indices <= position_right_boundary)]
+                encoded_dfs_trimmed.append(encoded_df_trimmed)
+            return encoded_dfs_trimmed   
+           
         def process_encoding(encoding_set):
             for encoding_df in encoding_set:
                 encoding_df.columns = encoding_df.columns.get_level_values("FullChange")

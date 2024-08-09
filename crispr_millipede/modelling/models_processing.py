@@ -226,29 +226,29 @@ class MillipedeInputDataExperimentalGroup:
                 merged_exp_reps_df: pd.DataFrame = pd.concat(exp_merged_rep_df_list)    
                 
                 # Per-condition filtering
-
-                
-                
-                
                 per_condition_reads_filter = lambda reads_colname, reads_num_cutoff, acceptable_rep_count, df: sum(df[reads_colname] >= reads_num_cutoff) >= acceptable_rep_count 
                 if (cutoff_specification.baseline_pop_per_condition_each_replicate_num_cutoff > 0) and (cutoff_specification.baseline_pop_per_condition_acceptable_rep_count > 0):
+                    print(f"Running baseline per-condition filtering with num_cutoff={cutoff_specification.baseline_pop_per_condition_each_replicate_num_cutoff} and acceptable_rep_count={cutoff_specification.baseline_pop_per_condition_acceptable_rep_count}")
                     merged_exp_reps_df = merged_exp_reps_df.groupby(nucleotide_ids, as_index=False).filter(partial(per_condition_reads_filter(baseline_pop_df_reads_colname, cutoff_specification.baseline_pop_per_condition_each_replicate_num_cutoff, cutoff_specification.baseline_pop_per_condition_acceptable_rep_count)))
                 if (cutoff_specification.enriched_pop_per_condition_each_replicate_num_cutoff > 0) and (cutoff_specification.enriched_pop_per_condition_acceptable_rep_count > 0):
+                    print(f"Running enriched per-condition filtering with num_cutoff={cutoff_specification.enriched_pop_per_condition_each_replicate_num_cutoff} and acceptable_rep_count={cutoff_specification.enriched_pop_per_condition_acceptable_rep_count}")
                     merged_exp_reps_df = merged_exp_reps_df.groupby(nucleotide_ids, as_index=False).filter(partial(per_condition_reads_filter(enriched_pop_df_reads_colname, cutoff_specification.enriched_pop_per_condition_each_replicate_num_cutoff, cutoff_specification.enriched_pop_per_condition_acceptable_rep_count)))
                 if (cutoff_specification.presort_pop_per_condition_each_replicate_num_cutoff > 0) and (cutoff_specification.presort_pop_per_condition_acceptable_rep_count > 0):
+                    print(f"Running enriched per-condition filtering with num_cutoff={cutoff_specification.presort_pop_per_condition_each_replicate_num_cutoff} and acceptable_rep_count={cutoff_specification.presort_pop_per_condition_acceptable_rep_count}")
                     merged_exp_reps_df = merged_exp_reps_df.groupby(nucleotide_ids, as_index=False).filter(partial(per_condition_reads_filter(presort_pop_df_reads_colname, cutoff_specification.presort_pop_per_condition_each_replicate_num_cutoff, cutoff_specification.presort_pop_per_condition_acceptable_rep_count)))
 
 
                 # All-condition filtering
-                def all_condition_filter_func(df: pd.DataFrame):
-                    return per_condition_reads_filter(baseline_pop_df_reads_colname, cutoff_specification.baseline_pop_all_condition_each_replicate_num_cutoff, cutoff_specification.baseline_pop_all_condition_acceptable_rep_count, df) | per_condition_reads_filter(enriched_pop_df_reads_colname, cutoff_specification.enriched_pop_all_condition_each_replicate_num_cutoff, cutoff_specification.enriched_pop_all_condition_acceptable_rep_count, df) | per_condition_reads_filter(presort_pop_df_reads_colname, cutoff_specification.presort_pop_all_condition_each_replicate_num_cutoff, cutoff_specification.presort_pop_all_condition_acceptable_rep_count, df)
-                
-                merged_exp_reps_df = merged_exp_reps_df.groupby(nucleotide_ids, as_index=False).filter(all_condition_filter_func)
+                if ((cutoff_specification.baseline_pop_all_condition_each_replicate_num_cutoff > 0) and (cutoff_specification.baseline_pop_all_condition_acceptable_rep_count > 0)) | ((cutoff_specification.enriched_pop_all_condition_each_replicate_num_cutoff > 0) and (cutoff_specification.enriched_pop_all_condition_acceptable_rep_count > 0)) | ((cutoff_specification.presort_pop_all_condition_each_replicate_num_cutoff > 0) and (cutoff_specification.presort_pop_all_condition_acceptable_rep_count > 0)) :
+                    print(f"Running all-condition filtering with enriched_num_cutoff={cutoff_specification.enriched_pop_all_condition_each_replicate_num_cutoff}, enriched_acceptable_rep_count={cutoff_specification.enriched_pop_all_condition_acceptable_rep_count}, baseline_num_cutoff={cutoff_specification.baseline_pop_all_condition_each_replicate_num_cutoff}, baseline_acceptable_rep_count={cutoff_specification.baseline_pop_all_condition_acceptable_rep_count}, presort_num_cutoff={cutoff_specification.presort_pop_all_condition_each_replicate_num_cutoff}, presort_acceptable_rep_count={cutoff_specification.presort_pop_all_condition_acceptable_rep_count}")
+
+                    def all_condition_filter_func(df: pd.DataFrame):
+                        return per_condition_reads_filter(baseline_pop_df_reads_colname, cutoff_specification.baseline_pop_all_condition_each_replicate_num_cutoff, cutoff_specification.baseline_pop_all_condition_acceptable_rep_count, df) | per_condition_reads_filter(enriched_pop_df_reads_colname, cutoff_specification.enriched_pop_all_condition_each_replicate_num_cutoff, cutoff_specification.enriched_pop_all_condition_acceptable_rep_count, df) | per_condition_reads_filter(presort_pop_df_reads_colname, cutoff_specification.presort_pop_all_condition_each_replicate_num_cutoff, cutoff_specification.presort_pop_all_condition_acceptable_rep_count, df)
+                    
+                    merged_exp_reps_df = merged_exp_reps_df.groupby(nucleotide_ids, as_index=False).filter(all_condition_filter_func)
 
                 # De-concatenate back into separate replicate by groupby on temporary rep_i column
                 exp_merged_rep_df_list = [merged_exp_rep_df for _, merged_exp_rep_df in merged_exp_reps_df.groupby("rep_i")]
-
-
 
                 '''
                     Perform normalization after filtering
@@ -501,7 +501,7 @@ class MillipedeInputDataExperimentalGroup:
                 merged_experiments_df = pd.concat(merged_experiment_df_list).groupby(nucleotide_ids, as_index=False).sum()
                 # Filter rows based on cutoffs
                 merged_experiments_df = merged_experiments_df[merged_experiments_df["total_reads"] >= cutoff_specification.all_experiment_num_cutoff]
-                merged_experiments_df = merged_experiments_df[merged_experiments_df["total_reads"] > 0] # Ensure non-zero reads to prevent error during modelling
+                #merged_experiments_df = merged_experiments_df[merged_experiments_df["total_reads"] > 0] # Ensure non-zero reads to prevent error during modelling
 
                 merged_experiments_df = __add_supporting_columns_partial(encoding_df = merged_experiments_df)
                 data = merged_experiments_df
@@ -513,7 +513,7 @@ class MillipedeInputDataExperimentalGroup:
                     merged_experiments_df = [pd.concat([self.__get_intercept_df(merged_experiment_df_list), pd.concat(merged_experiment_df_i, ignore_index=True)], axis=1) for merged_experiment_df_i in merged_experiment_df_list]
                     merged_experiments_df = [merged_experiments_df_i.fillna(0.0) for merged_experiments_df_i in merged_experiments_df] # TODO 20221021: This is to ensure all intercept values are assigned (since NaNs exist with covariate by experiment) - there is possible if there are other NaN among features that it will be set to 0 unintentionally
                     merged_experiments_df = [__add_supporting_columns_partial(encoding_df = merged_experiments_df_i) for merged_experiments_df_i in merged_experiments_df]
-                    merged_experiments_df = [merged_experiments_df_i[merged_experiments_df_i["total_reads"] > 0] for merged_experiments_df_i in merged_experiments_df] # Ensure non-zero reads to prevent error during modelling
+                    #merged_experiments_df = [merged_experiments_df_i[merged_experiments_df_i["total_reads"] > 0] for merged_experiments_df_i in merged_experiments_df] # Ensure non-zero reads to prevent error during modelling
                     
                     data = merged_experiments_df
                 elif replicate_merge_strategy in [MillipedeReplicateMergeStrategy.SUM, MillipedeReplicateMergeStrategy.COVARIATE, MillipedeReplicateMergeStrategy.MODELLED_COMBINED]: # SINGLE MATRIX FOR ALL REPLICATES
@@ -522,20 +522,20 @@ class MillipedeInputDataExperimentalGroup:
                     merged_experiments_df = pd.concat([self.__get_intercept_df(merged_experiment_df_list), pd.concat(merged_experiment_df_list, ignore_index=True)], axis=1)
                     merged_experiments_df = merged_experiments_df.fillna(0.0) # TODO 20221021: This is to ensure all intercept values are assigned (since NaNs exist with covariate by experiment) - there is possible if there are other NaN among features that it will be set to 0 unintentionally
                     merged_experiments_df = __add_supporting_columns_partial(encoding_df = merged_experiments_df)
-                    merged_experiments_df = merged_experiments_df[merged_experiments_df["total_reads"] > 0] # Ensure non-zero reads to prevent error during modelling
+                    #merged_experiments_df = merged_experiments_df[merged_experiments_df["total_reads"] > 0] # Ensure non-zero reads to prevent error during modelling
 
                     data = merged_experiments_df
             elif experiment_merge_strategy == MillipedeExperimentMergeStrategy.SEPARATE:
                 if replicate_merge_strategy in [MillipedeReplicateMergeStrategy.SEPARATE, MillipedeReplicateMergeStrategy.MODELLED_SEPARATE]:
                     merged_experiment_df_list: List[List[pd.DataFrame]]
                     merged_experiment_df_list = [[__add_supporting_columns_partial(encoding_df = merged_rep_df) for merged_rep_df in merged_rep_df_list] for merged_rep_df_list in merged_experiment_df_list]
-                    merged_experiment_df_list = [[merged_rep_df[merged_rep_df["total_reads"] > 0] for merged_rep_df in merged_rep_df_list] for merged_rep_df_list in merged_experiment_df_list] # Ensure non-zero reads to prevent error during modelling
+                    #merged_experiment_df_list = [[merged_rep_df[merged_rep_df["total_reads"] > 0] for merged_rep_df in merged_rep_df_list] for merged_rep_df_list in merged_experiment_df_list] # Ensure non-zero reads to prevent error during modelling
 
                     data = merged_experiment_df_list
                 elif replicate_merge_strategy in [MillipedeReplicateMergeStrategy.SUM, MillipedeReplicateMergeStrategy.COVARIATE, MillipedeReplicateMergeStrategy.MODELLED_COMBINED]:
                     merged_experiment_df_list: List[pd.DataFrame]
                     merged_experiment_df_list = [__add_supporting_columns_partial(encoding_df = merged_reps_df) for merged_reps_df in merged_experiment_df_list]
-                    merged_experiment_df_list = [merged_reps_df[merged_reps_df["total_reads"] > 0] for merged_reps_df in merged_experiment_df_list]
+                    #merged_experiment_df_list = [merged_reps_df[merged_reps_df["total_reads"] > 0] for merged_reps_df in merged_experiment_df_list]
 
                     data = merged_experiment_df_list
             else:

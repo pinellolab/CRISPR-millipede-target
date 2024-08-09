@@ -87,30 +87,65 @@ class MillipedeCutoffSpecification:
     per_replicate_each_condition_num_cutoff:int = 0
     per_replicate_presort_condition_num_cutoff:int = 0
     per_replicate_all_condition_num_cutoff:int = 0 
-    baseline_pop_per_condition_each_replicate_num_cutoff:int = 0
     
-    baseline_pop_per_condition_missing_rep_count:int = 1
+    baseline_pop_per_condition_each_replicate_num_cutoff:int = 0
+    baseline_pop_per_condition_acceptable_rep_count:int = 0
     enriched_pop_per_condition_each_replicate_num_cutoff:int = 0
-    enriched_pop_per_condition_missing_rep_count:int = 1
+    enriched_pop_per_condition_acceptable_rep_count:int = 0
     presort_pop_per_condition_each_replicate_num_cutoff:int = 0
-    presort_pop_per_condition_missing_rep_count:int = 1
+    presort_pop_per_condition_acceptable_rep_count:int = 0
     
     baseline_pop_all_condition_each_replicate_num_cutoff:int = 0
-    baseline_pop_all_condition_missing_rep_count:int = 1
+    baseline_pop_all_condition_acceptable_rep_count:int = 0
     enriched_pop_all_condition_each_replicate_num_cutoff:int = 0
-    enriched_pop_all_condition_missing_rep_count:int = 1
+    enriched_pop_all_condition_acceptable_rep_count:int = 0
     presort_pop_all_condition_each_replicate_num_cutoff:int = 0
-    presort_pop_all_condition_missing_rep_count:int = 1
+    presort_pop_all_condition_acceptable_rep_count:int = 0
     
     all_replicate_num_cutoff:int = 2
     all_experiment_num_cutoff:int = 0
-    column_removal_proportion: Optional[float] = None
         
     def __hash__(self):
-        return hash((self.per_replicate_each_condition_num_cutoff, self.per_replicate_presort_condition_num_cutoff, self.per_replicate_all_condition_num_cutoff, self.all_replicate_num_cutoff, self.all_experiment_num_cutoff, self.column_removal_proportion))
+        return hash((self.per_replicate_each_condition_num_cutoff, 
+                     self.per_replicate_presort_condition_num_cutoff, 
+                     self.per_replicate_all_condition_num_cutoff, 
+                     self.all_replicate_num_cutoff, 
+                     self.all_experiment_num_cutoff, 
+                     self.baseline_pop_per_condition_acceptable_rep_count, 
+                     self.baseline_pop_per_condition_acceptable_rep_count, 
+                     self.baseline_pop_per_condition_acceptable_rep_count,
+                     self.enriched_pop_per_condition_each_replicate_num_cutoff,
+                     self.enriched_pop_per_condition_acceptable_rep_count,
+                     self.presort_pop_per_condition_each_replicate_num_cutoff,
+                     self.presort_pop_per_condition_acceptable_rep_count,
+                     self.baseline_pop_all_condition_each_replicate_num_cutoff,
+                     self.baseline_pop_all_condition_acceptable_rep_count,
+                     self.enriched_pop_all_condition_each_replicate_num_cutoff,
+                     self.enriched_pop_all_condition_acceptable_rep_count,
+                     self.presort_pop_all_condition_each_replicate_num_cutoff,
+                     self.presort_pop_all_condition_acceptable_rep_count))
+
     
     def __str__(self):
-        return "per_replicate_each_condition_num_cutoff={};per_replicate_presort_condition_num_cutoff={};per_replicate_all_condition_num_cutoff={};all_replicate_num_cutoff={};all_experiment_num_cutoff={}".format(self.per_replicate_each_condition_num_cutoff, self.per_replicate_presort_condition_num_cutoff, self.per_replicate_all_condition_num_cutoff, self.all_replicate_num_cutoff, self.all_experiment_num_cutoff)
+        return f"""
+                    per_replicate_each_condition_num_cutoff={self.per_replicate_each_condition_num_cutoff}, 
+                    per_replicate_presort_condition_num_cutoff={self.per_replicate_presort_condition_num_cutoff}, 
+                    per_replicate_all_condition_num_cutoff={self.per_replicate_all_condition_num_cutoff}, 
+                    all_replicate_num_cutoff={self.all_replicate_num_cutoff}, 
+                    all_experiment_num_cutoff={self.all_experiment_num_cutoff}, 
+                    baseline_pop_per_condition_acceptable_rep_count={self.baseline_pop_per_condition_acceptable_rep_count}, 
+                    baseline_pop_per_condition_acceptable_rep_count={self.baseline_pop_per_condition_acceptable_rep_count}, 
+                    baseline_pop_per_condition_acceptable_rep_count={self.baseline_pop_per_condition_acceptable_rep_count},
+                    enriched_pop_per_condition_each_replicate_num_cutoff={self.enriched_pop_per_condition_each_replicate_num_cutoff},
+                    enriched_pop_per_condition_acceptable_rep_count={self.enriched_pop_per_condition_acceptable_rep_count},
+                    presort_pop_per_condition_each_replicate_num_cutoff={self.presort_pop_per_condition_each_replicate_num_cutoff},
+                    presort_pop_per_condition_acceptable_rep_count={self.presort_pop_per_condition_acceptable_rep_count},
+                    baseline_pop_all_condition_each_replicate_num_cutoff={self.baseline_pop_all_condition_each_replicate_num_cutoff},
+                    baseline_pop_all_condition_acceptable_rep_count={self.baseline_pop_all_condition_acceptable_rep_count},
+                    enriched_pop_all_condition_each_replicate_num_cutoff={self.enriched_pop_all_condition_each_replicate_num_cutoff},
+                    enriched_pop_all_condition_acceptable_rep_count={self.enriched_pop_all_condition_acceptable_rep_count},
+                    presort_pop_all_condition_each_replicate_num_cutoff={self.presort_pop_all_condition_each_replicate_num_cutoff},
+                    presort_pop_all_condition_acceptable_rep_count={self.presort_pop_all_condition_acceptable_rep_count}"""
     
     def __repr__(self):
         return str(self)
@@ -156,7 +191,6 @@ class MillipedeModelSpecification:
     S: float = 1.0 #S parameter
     tau: float = 0.01 #tau parameter
     tau_intercept: float = 1.0e-4
-    
     
     def validate_merge_strategies(self, replicate_merge_strategy: MillipedeReplicateMergeStrategy, experiment_merge_strategy:MillipedeExperimentMergeStrategy):
         if experiment_merge_strategy == MillipedeExperimentMergeStrategy.SUM:

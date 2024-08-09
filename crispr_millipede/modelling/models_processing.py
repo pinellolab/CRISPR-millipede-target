@@ -22,33 +22,6 @@ from .models_inputs import *
 
 from .pydeseq import run_pydeseq2
 
-"""
-    Helper function for filtering the columns of an input design matrix
-"""
-def filter_columns_by_variant_frequency(input_design_df: pd.DataFrame, millipede_cutoff_specification: MillipedeCutoffSpecification) -> pd.DataFrame:
-    if millipede_cutoff_specification.column_removal_proportion is not None:
-        #print("Before")
-        #print(input_design_df)
-        # Get columns (both nucleotide columns for filtering, and non-nucleotide columns to add back in later)
-        nucleotide_ids = [col for col in input_design_df.columns if ">"  in col]
-        non_nucleotide_ids = [col for col in input_design_df.columns if ">" not in col]
-
-        # Calculate the variant frequency for each nucleotide column
-        variant_reads = input_design_df.loc[:, nucleotide_ids].mul(input_design_df["total_reads"], axis=0).sum(axis=0)
-        variant_af = variant_reads.astype(float).mul(1./input_design_df["total_reads"].sum())
-        variant_af[variant_af.isna()] = 0
-
-        # Perform filtering based on variant frequency
-        selected_nucleotide_ids = variant_af[variant_af>=millipede_cutoff_specification.column_removal_proportion].index
-        new_design_columns = selected_nucleotide_ids.append(pd.Index(non_nucleotide_ids))
-        input_design_df = input_design_df.loc[:, new_design_columns]     
-        #print("After")
-        #print(input_design_df)
-
-        return input_design_df
-    else:
-        return input_design_df
-
 def decay_function(x, k, a, epsilon=0.01):
     b = -np.log(epsilon) / a
     return 1 + (k - 1) * np.exp(-b * x)
@@ -253,17 +226,22 @@ class MillipedeInputDataExperimentalGroup:
                 merged_exp_reps_df: pd.DataFrame = pd.concat(exp_merged_rep_df_list)    
                 
                 # Per-condition filtering
-                if (cutoff_specification.baseline_pop_per_condition_each_replicate_num_cutoff > 0) and (cutoff_specification.baseline_pop_per_condition_missing_rep_count < len(reps)):
-                    merged_exp_reps_df = merged_exp_reps_df.groupby(nucleotide_ids, as_index=False).filter(lambda df: sum(df[baseline_pop_df_reads_colname] <= cutoff_specification.baseline_pop_per_condition_each_replicate_num_cutoff) <= cutoff_specification.baseline_pop_per_condition_missing_rep_count)
-                if (cutoff_specification.enriched_pop_per_condition_each_replicate_num_cutoff > 0) and (cutoff_specification.enriched_pop_per_condition_missing_rep_count < len(reps)):
-                    merged_exp_reps_df = merged_exp_reps_df.groupby(nucleotide_ids, as_index=False).filter(lambda df: sum(df[enriched_pop_df_reads_colname] <= cutoff_specification.enriched_pop_per_condition_each_replicate_num_cutoff) <= cutoff_specification.enriched_pop_per_condition_missing_rep_count)
-                if (cutoff_specification.presort_pop_per_condition_each_replicate_num_cutoff > 0) and (cutoff_specification.presort_pop_per_condition_missing_rep_count < len(reps)):
-                    merged_exp_reps_df = merged_exp_reps_df.groupby(nucleotide_ids, as_index=False).filter(lambda df: sum(df[presort_pop_df_reads_colname] <= cutoff_specification.presort_pop_per_condition_each_replicate_num_cutoff) <= cutoff_specification.presort_pop_per_condition_missing_rep_count)
+
+                
+                
+                
+                per_condition_reads_filter = lambda reads_colname, reads_num_cutoff, acceptable_rep_count, df: sum(df[reads_colname] >= reads_num_cutoff) >= acceptable_rep_count 
+                if (cutoff_specification.baseline_pop_per_condition_each_replicate_num_cutoff > 0) and (cutoff_specification.baseline_pop_per_condition_acceptable_rep_count > 0):
+                    merged_exp_reps_df = merged_exp_reps_df.groupby(nucleotide_ids, as_index=False).filter(partial(per_condition_reads_filter(baseline_pop_df_reads_colname, cutoff_specification.baseline_pop_per_condition_each_replicate_num_cutoff, cutoff_specification.baseline_pop_per_condition_acceptable_rep_count)))
+                if (cutoff_specification.enriched_pop_per_condition_each_replicate_num_cutoff > 0) and (cutoff_specification.enriched_pop_per_condition_acceptable_rep_count > 0):
+                    merged_exp_reps_df = merged_exp_reps_df.groupby(nucleotide_ids, as_index=False).filter(partial(per_condition_reads_filter(enriched_pop_df_reads_colname, cutoff_specification.enriched_pop_per_condition_each_replicate_num_cutoff, cutoff_specification.enriched_pop_per_condition_acceptable_rep_count)))
+                if (cutoff_specification.presort_pop_per_condition_each_replicate_num_cutoff > 0) and (cutoff_specification.presort_pop_per_condition_acceptable_rep_count > 0):
+                    merged_exp_reps_df = merged_exp_reps_df.groupby(nucleotide_ids, as_index=False).filter(partial(per_condition_reads_filter(presort_pop_df_reads_colname, cutoff_specification.presort_pop_per_condition_each_replicate_num_cutoff, cutoff_specification.presort_pop_per_condition_acceptable_rep_count)))
 
 
                 # All-condition filtering
                 def all_condition_filter_func(df: pd.DataFrame):
-                    return (sum(df[baseline_pop_df_reads_colname] <= cutoff_specification.baseline_pop_all_condition_each_replicate_num_cutoff) <= cutoff_specification.baseline_pop_all_condition_missing_rep_count) | (sum(df[enriched_pop_df_reads_colname] <= cutoff_specification.enriched_pop_all_condition_each_replicate_num_cutoff) <= cutoff_specification.enriched_pop_all_condition_missing_rep_count) | (sum(df[presort_pop_df_reads_colname] <= cutoff_specification.presort_pop_all_condition_each_replicate_num_cutoff) <= cutoff_specification.presort_pop_all_condition_missing_rep_count)
+                    return per_condition_reads_filter(baseline_pop_df_reads_colname, cutoff_specification.baseline_pop_all_condition_each_replicate_num_cutoff, cutoff_specification.baseline_pop_all_condition_acceptable_rep_count, df) | per_condition_reads_filter(enriched_pop_df_reads_colname, cutoff_specification.enriched_pop_all_condition_each_replicate_num_cutoff, cutoff_specification.enriched_pop_all_condition_acceptable_rep_count, df) | per_condition_reads_filter(presort_pop_df_reads_colname, cutoff_specification.presort_pop_all_condition_each_replicate_num_cutoff, cutoff_specification.presort_pop_all_condition_acceptable_rep_count, df)
                 
                 merged_exp_reps_df = merged_exp_reps_df.groupby(nucleotide_ids, as_index=False).filter(all_condition_filter_func)
 
@@ -278,6 +256,7 @@ class MillipedeInputDataExperimentalGroup:
                 def normalize_func(merged_exp_rep_df):
                     merged_exp_rep_normalized_df: pd.DataFrame = self.__normalize_counts(merged_exp_rep_df, enriched_pop_df_reads_colname, baseline_pop_df_reads_colname, nucleotide_ids, design_matrix_processing_specification.wt_normalization, design_matrix_processing_specification.total_normalization, presort_pop_df_reads_colname) 
                     return merged_exp_rep_normalized_df
+                # TODO 20240808 Can implement normalization that requires all replicates "exp_merged_rep_df_list" ie size factors from Zain
                 exp_merged_rep_df_list = [normalize_func(merged_exp_rep_df) for merged_exp_rep_df in exp_merged_rep_df_list]
                 
 
@@ -524,11 +503,6 @@ class MillipedeInputDataExperimentalGroup:
                 merged_experiments_df = merged_experiments_df[merged_experiments_df["total_reads"] >= cutoff_specification.all_experiment_num_cutoff]
                 merged_experiments_df = merged_experiments_df[merged_experiments_df["total_reads"] > 0] # Ensure non-zero reads to prevent error during modelling
 
-                # Filter columns based on cutoffs 
-                merged_experiments_df = filter_columns_by_variant_frequency(input_design_df = merged_experiments_df, millipede_cutoff_specification = cutoff_specification)
-
-
-                
                 merged_experiments_df = __add_supporting_columns_partial(encoding_df = merged_experiments_df)
                 data = merged_experiments_df
             elif experiment_merge_strategy == MillipedeExperimentMergeStrategy.COVARIATE:
@@ -541,10 +515,6 @@ class MillipedeInputDataExperimentalGroup:
                     merged_experiments_df = [__add_supporting_columns_partial(encoding_df = merged_experiments_df_i) for merged_experiments_df_i in merged_experiments_df]
                     merged_experiments_df = [merged_experiments_df_i[merged_experiments_df_i["total_reads"] > 0] for merged_experiments_df_i in merged_experiments_df] # Ensure non-zero reads to prevent error during modelling
                     
-                    # Filter columns based on cutoffs 
-                    merged_experiments_df = [filter_columns_by_variant_frequency(input_design_df = merged_experiments_df_i, millipede_cutoff_specification = cutoff_specification) for merged_experiments_df_i in merged_experiments_df]
-                    
-
                     data = merged_experiments_df
                 elif replicate_merge_strategy in [MillipedeReplicateMergeStrategy.SUM, MillipedeReplicateMergeStrategy.COVARIATE, MillipedeReplicateMergeStrategy.MODELLED_COMBINED]: # SINGLE MATRIX FOR ALL REPLICATES
                     merged_experiment_df_list: List[pd.DataFrame]
@@ -554,9 +524,6 @@ class MillipedeInputDataExperimentalGroup:
                     merged_experiments_df = __add_supporting_columns_partial(encoding_df = merged_experiments_df)
                     merged_experiments_df = merged_experiments_df[merged_experiments_df["total_reads"] > 0] # Ensure non-zero reads to prevent error during modelling
 
-                    # Filter columns based on cutoffs 
-                    merged_experiments_df = filter_columns_by_variant_frequency(input_design_df = merged_experiments_df, millipede_cutoff_specification = cutoff_specification)
-
                     data = merged_experiments_df
             elif experiment_merge_strategy == MillipedeExperimentMergeStrategy.SEPARATE:
                 if replicate_merge_strategy in [MillipedeReplicateMergeStrategy.SEPARATE, MillipedeReplicateMergeStrategy.MODELLED_SEPARATE]:
@@ -564,17 +531,11 @@ class MillipedeInputDataExperimentalGroup:
                     merged_experiment_df_list = [[__add_supporting_columns_partial(encoding_df = merged_rep_df) for merged_rep_df in merged_rep_df_list] for merged_rep_df_list in merged_experiment_df_list]
                     merged_experiment_df_list = [[merged_rep_df[merged_rep_df["total_reads"] > 0] for merged_rep_df in merged_rep_df_list] for merged_rep_df_list in merged_experiment_df_list] # Ensure non-zero reads to prevent error during modelling
 
-                    # Filter columns based on cutoffs 
-                    merged_experiment_df_list = [[filter_columns_by_variant_frequency(input_design_df = merged_rep_df, millipede_cutoff_specification = cutoff_specification) for merged_rep_df in merged_rep_df_list] for merged_rep_df_list in merged_experiment_df_list]
-
                     data = merged_experiment_df_list
                 elif replicate_merge_strategy in [MillipedeReplicateMergeStrategy.SUM, MillipedeReplicateMergeStrategy.COVARIATE, MillipedeReplicateMergeStrategy.MODELLED_COMBINED]:
                     merged_experiment_df_list: List[pd.DataFrame]
                     merged_experiment_df_list = [__add_supporting_columns_partial(encoding_df = merged_reps_df) for merged_reps_df in merged_experiment_df_list]
                     merged_experiment_df_list = [merged_reps_df[merged_reps_df["total_reads"] > 0] for merged_reps_df in merged_experiment_df_list]
-
-                    # Filter columns based on cutoffs 
-                    merged_experiment_df_list = [filter_columns_by_variant_frequency(input_design_df = merged_reps_df, millipede_cutoff_specification = cutoff_specification) for merged_reps_df in merged_experiment_df_list]
 
                     data = merged_experiment_df_list
             else:
@@ -681,7 +642,7 @@ class MillipedeInputDataExperimentalGroup:
             encoding_df[baseline_pop_df_reads_colname + "_raw"] = encoding_df[baseline_pop_df_reads_colname]
             if presort_pop_df_reads_colname is not None:
                 encoding_df[presort_pop_df_reads_colname + "_raw"] = encoding_df[presort_pop_df_reads_colname]
-        
+        # TODO 20240808: Implement size factor normalization - Zain has code
         return encoding_df
 
     def __add_supporting_columns(self, 

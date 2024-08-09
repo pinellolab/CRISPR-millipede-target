@@ -172,6 +172,7 @@ class EncodingDataFrames:
                     
                     # Get list of features that are below the minimum editing frequency
                     if (minimum_editing_frequency > 0) and (len(minimum_editing_frequency_population) > 0):
+                        print("Filtering by minimum editing frequency")
                         for population in minimum_editing_frequency_population:
                             # Get read column and assert it exists in the dataframe
                             population_read_column = f"#Reads_{population}"
@@ -186,16 +187,24 @@ class EncodingDataFrames:
                             filtered_nucleotide_ids_list.extend(filtered_nucleotide_ids)
 
                     # Get the features to denoise/remove by position and variant type
-                    if editable_positions: # Filter by position
+                    if len(editable_positions) > 0: # Filter by position
+                        print("Filtering by editable positions")
                         noneditable_colnames_position = [colname_feature[3] for colname_feature in colname_features if colname_feature[0] not in editable_positions]  # select positions that do not contain position
+                        print(f"{len(noneditable_colnames_position)} non-editable positions")
+                        print(noneditable_colnames_position)
                         filtered_nucleotide_ids_list.extend(noneditable_colnames_position)
                     if len(variant_types) > 0: # Filter by type
+                        print("Filtering by variant types")
                         noneditable_colnames_variants = [colname_feature[3] for colname_feature in colname_features if np.all([(colname_feature[1]!=variant_type[0]) or (colname_feature[2]!=variant_type[1]) for variant_type in variant_types])] # Select features that does not contain a variant type
-                        filtered_nucleotide_ids_list.extend(noneditable_colnames_position)
+                        print(f"{len(noneditable_colnames_variants)} variant types")
+                        print(noneditable_colnames_variants)
+                        filtered_nucleotide_ids_list.extend(noneditable_colnames_variants)
                     
                 # Perform denoising
                 encoded_dfs_denoised: List[pd.DataFrame] = []
-                filtered_nucleotide_ids_set = set(filtered_nucleotide_ids_list)
+                filtered_nucleotide_ids_set = list(set(filtered_nucleotide_ids_list))
+                print(f"Denoising out {len(filtered_nucleotide_ids_set)} columns.")
+                print(filtered_nucleotide_ids_set)
                 if len(filtered_nucleotide_ids_set) > 0:
                     for encoded_df_rep in encoded_dfs:
                         if remove_denoised:
@@ -203,8 +212,10 @@ class EncodingDataFrames:
                         else:
                             encoded_df_rep.loc[:, filtered_nucleotide_ids_set] = 0
                             encoded_dfs_denoised.append(encoded_df_rep)
-                
-                return encoded_dfs_denoised
+                    print("Filtered columns, returning denoised DFs")
+                    return encoded_dfs_denoised
+                print("No columns to filter, returning non-denoised DFs")
+                return encoded_dfs
             else:
                 print("Not denoising sample")
                 return encoded_dfs

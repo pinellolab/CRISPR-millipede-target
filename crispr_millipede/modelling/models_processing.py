@@ -1238,11 +1238,28 @@ class EncodingEditingFrequenciesExperimentalGroup:
         self.__validated = True
     
     def __generate_per_position_editing_frequency(self, encoding_df: pd.DataFrame) -> pd.Series:
-        encoding_df_position_collapsed = pd.DataFrame([encoding_df.iloc[:, encoding_df.columns.get_level_values("Position") == position].sum(axis=1)>0 for position in encoding_df.columns.levels[1]]).T
-        encoding_df_position_collapsed_freq = (encoding_df_position_collapsed.sum(axis=0)/encoding_df_position_collapsed.shape[0])
+        # Generate encoding-only DF and read count series
+        nt_columns_indicator = pd.Series([">" in col for col in encoding_df.columns])
+        position_series = pd.Series([parse_position(col) for col in encoding_df.columns[nt_columns_indicator]])
+        encoding_only_df = encoding_df.loc[:, encoding_df.columns[nt_columns_indicator]]
+        reads_df = encoding_df.loc[:, encoding_df.columns[~nt_columns_indicator]]
+        assert reads_df.shape[1] == 1
+        reads_series = reads_df.iloc[:, 0]
+
+        # Generate per position counts by iterating through positions, subsetting the encoding by columns, and calculating frequency
+        read_series_per_position = [reads_series[encoding_only_df.loc[:, encoding_only_df.columns[position_series == position]].sum(axis=1)>0] for position in position_series.unique()]
+        encoding_df_position_collapsed_freq = pd.Series([sum(read_series_subset)/sum(reads_series) for read_series_subset in read_series_per_position], index=position_series.unique())
         return encoding_df_position_collapsed_freq
     
     def __generate_per_variant_editing_frequency(self, encoding_df: pd.DataFrame) -> pd.Series:
-        encoding_df_freq = (encoding_df.sum(axis=0)/encoding_df.shape[0])
-        return encoding_df_freq
+        # Generate encoding-only DF and read count series
+        nt_columns_indicator = pd.Series([">" in col for col in encoding_df.columns])
+        encoding_only_df = encoding_df.loc[:, encoding_df.columns[nt_columns_indicator]]
+        reads_df = encoding_df.loc[:, encoding_df.columns[~nt_columns_indicator]]
+        assert reads_df.shape[1] == 1
+        reads_series = reads_df.iloc[:, 0]
 
+        # Generate per variant frequency by multiplying 1/0 encoding by read series, then calculating frequency
+        encoding_only_reads_mul_df = encoding_only_df.mul(reads_series, axis=0)
+        encoding_df_freq = encoding_only_reads_mul_df.sum(axis=0) / sum(reads_series)
+        return encoding_df_freq

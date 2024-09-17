@@ -129,8 +129,9 @@ cme.save_encodings_df(encoding_dataframes.population_wt_encoding_processed, file
 ### STEP 3: Perform modelling of the encoded dataset
 *Now that we have the encoded representation of the alleles, we will now perform Millipede modelling off of this representation. For documentation on the Millipede model sub-package, see [here](https://millipede.readthedocs.io/en/latest/getting_started.html).*
 
-Below contains the class definition (and default values) of the `MillipedeDesignMatrixProcessingSpecification` that you will need to instantiate:
+**Set the model parameters:** Below contains the class definition (and default values) of the `MillipedeDesignMatrixProcessingSpecification` that you will need to instantiate:
 
+```
 @dataclass
 class MillipedeDesignMatrixProcessingSpecification:
     wt_normalization: bool = True # Normalize the read count base on the unedited allele counts
@@ -140,9 +141,11 @@ class MillipedeDesignMatrixProcessingSpecification:
     K_enriched: Union[float, List[float], List[List[float]]] = 5 # Set the K_enriched value of the decay function
     K_baseline: Union[float, List[float], List[List[float]]] = 5 # Set the K_baseline value of the decay function
     a_parameter: Union[float, List[float], List[List[float]]] = 300 # Set the a_parameter of the decay function
+```
 
 Additionally, you will need to specify the type of model as well. Below contains the class definition (and default values) of the `MillipedeModelSpecification` that you will need to instantiate:
 
+```
 @dataclass
 class MillipedeModelSpecification:
     """
@@ -157,6 +160,7 @@ class MillipedeModelSpecification:
     S: float = 1.0 #S parameter
     tau: float = 0.01 #tau parameter
     tau_intercept: float = 1.0e-4
+```
 
 There are sub-classes you will need to instantiate. For instance, the `MillipedeReplicateMergeStrategy` specifies how multiple replicates are handled during modelling:
 ```
@@ -168,7 +172,8 @@ class MillipedeReplicateMergeStrategy(Enum):
     SUM = "SUM" # (Normalized) counts for all replicates are summed together; one model for all replicates
     COVARIATE = "COVARIATE" # Replicates are jointly modelled, though replicate ID is included in the model design matrix 
 ```
-**Recommended to run one version in `MillipedeReplicateMergeStrategy.SEPARATE` to assess individual replicate consistency, then if successful, run a final model in `MillipedeReplicateMergeStrategy.COVARIATE`
+
+*Recommended to run one version in `MillipedeReplicateMergeStrategy.SEPARATE` to assess individual replicate consistency, then if successful, run a final model in `MillipedeReplicateMergeStrategy.COVARIATE`*
     
 Likewise, the `MillipedeExperimentMergeStrategy` specifies how multiple experiments (i.e. screens with different editors) are handled during modelling.
 ```
@@ -192,6 +197,7 @@ class MillipedeModelType(Enum):
     BINOMIAL = "BINOMIAL"
     NEGATIVE_BINOMIAL = "NEGATIVE_BINOMIAL"
 ```
+*We recommend using the NORMAL_SIGMA_SCALED model, you will need to define the K_enriched, K_baseline, a, and decay_sigma_scale paramters to specify how the sigma_scale_factor is calculated.*
 
 Here is an example of specifying the complete input parameters for modelling:
 ```
@@ -209,7 +215,7 @@ design_matrix_spec = cmm.MillipedeDesignMatrixProcessingSpecification(
 )
 
 millipede_model_specification_set = {
-    "joint_replicate_per_experiment_models" : cmm.MillipedeModelSpecification(
+    "model_specification_1" : cmm.MillipedeModelSpecification(
         model_types=[cmm.MillipedeModelType.NORMAL_SIGMA_SCALED],
         replicate_merge_strategy=cmm.MillipedeReplicateMergeStrategy.COVARIATE,
         experiment_merge_strategy=cmm.MillipedeExperimentMergeStrategy.SEPARATE,
@@ -231,4 +237,38 @@ millipede_model_specification_set = {
         design_matrix_processing_specification=design_matrix_spec
     )
 }
+```
+
+**Load in the encoding data:** Now that you have specified the model inputs, let's load the encoding data in, which should be straightforward:
+
+```
+prefix_label ="20240916_v1_example_"
+encoding_filename = prefix_label + "encoding_dataframes_editor_encodings_rep{}.tsv"
+
+# This will load in the data
+model_input_data = cmm.MillipedeInputDataExperimentalGroup(
+    data_directory="./", 
+    enriched_pop_fn_experiment_list = [encoding_filename],
+    enriched_pop_df_reads_colname = "#Reads_target",
+    baseline_pop_fn_experiment_list = [encoding_filename],
+    baseline_pop_df_reads_colname = "#Reads_baseline", 
+    presort_pop_fn_experiment_list = [encoding_filename],
+    presort_pop_df_reads_colname = '#Reads_presort',
+    experiment_labels = ["editor"],
+    reps = [0,1,2],
+    millipede_model_specification_set = millipede_model_specification_set
+   )
+```
+
+**Run the model:** Now that you have specified the inputs, we will now run the model. You have the option to use the CPU or GPU for modelling.
+
+```
+model_run = cmm.MillipedeModelExperimentalGroup(experiments_inputdata=model_input_data, device=cmm.MillipedeComputeDevice.GPU)
+```
+
+**Explore the results:** The model will provide posterior inclusion probabilities (PIP) and beta coefficient scores for each feature/variant that was included in the model and not filtered out during the encoding step:
+
+```
+beta_df = paired_end_experiments_models_denoised.millipede_model_specification_set_with_results['model_specification_1'].millipede_model_specification_result_input[0].millipede_model_specification_single_matrix_result[cmm.MillipedeModelType.NORMAL_SIGMA_SCALED].beta
+pip_df = paired_end_experiments_models_denoised.millipede_model_specification_set_with_results['model_specification_1'].millipede_model_specification_result_input[0].millipede_model_specification_single_matrix_result[cmm.MillipedeModelType.NORMAL_SIGMA_SCALED].pip
 ```

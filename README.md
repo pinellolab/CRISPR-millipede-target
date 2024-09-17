@@ -4,10 +4,24 @@
 
 CRISPR-Millipede was developed by the *Pinello Lab* as an easy-to-use Python package for <ins> processing targeted amplicon-sequencing of tiled sequences from base-editing tiling screens to identify functional nucleotides</ins>. By providing amplicon-sequencing of installed alleles from multiple phenotypic populations, CRISPR-Millipede identifies the single-variants that contribute to differences in phenotype. See [this preprint](https://www.biorxiv.org/content/10.1101/2024.09.09.612085v1) for more information on this method! It is expected that you are familiar with Python, command-line tools, and CRISPR screens to follow this guide.
 
+### Notes on Experimental Design and Expected Inputs
+- This tool is best used for pooled CRISPR saturation mutagenesis screens of a single focused region. 
+- The length of the mutagenized region depends on the desired sequencing read length (i.e. paired-end 150bp sequencing has a max mutagenesis length of 300bp, however, it is desired that there is as much overlap of the paired-ends to maximize sequencing quality). You will perform targeted amplicon-sequencing of your intended mutagenized region. Ensure that no editing occurs at the primer binding sites, and ensure that the primers are tested and optimized beforehand (i.e. difficult-to-amplify or difficult-to-sequence regions may not be suitable for this method, therefore it is essential that this is tested prior to screening).
+- It is suggested that you also perform the standard sequencing of the guide RNA to calculate guide RNA enrichment scores in tandem. Therefore, you will split your genomic DNA into two different library preparation approaches: guide RNA sequencing and the aforementioned direct target sequencing.
+- The type of mutagenesis is best suited to single-nucleotide mutagenesis (i.e. base-editing and prime-editing).
+- This model was developed and tested on FACS-sorted based screens rather than proliferation screens, however the model may still work for proliferation screens by comparing samples between two separate timepoints.
+- Ensure that you have sufficient cell coverage for sequencing, especially if doing both guide RNA and direct target sequencing. You should preferably have roughly 1000 cells * number of guide RNAs in your library for EACH guide RNA and direct sequencing approach (therefore 2000 cells * number of guide RNAs if doing both sequencing approaches) for EACH sample. The cell coverage depends on the editing efficiency and the expected effect sizes. Typically, the sorted population with the phenotypic change from the baseline after perturbation will have the lowest coverage, therefore you should ensure that you have sufficient cell counts in all populations prior to sequencing (by modifying your FACS gates while still maintaining separation between your negative and positive control gRNAs or by simply increasing input cell amount at the expense of longer sort time).
+- Ensure that you have sufficient biological replicates (at least 3 replicates).
+- It is not necessary to haploidize your region to have single-copy alleles, though this may reduce the noise of the phenotypic scores for each sequenced allele.
+- While this method is robust to biases in different editing efficiencies among your guide RNAs since alleles are directly sequenced, ensuring high editing efficiency will increase the per-allele coverage in your samples thereby reducing the necessary cell coverage and increasing statistical power.
+
+See **Figure a** below for a schematic of the experimental design:
 
   <img src="https://github.com/user-attachments/assets/6ec0a352-aeb2-453b-81d4-ab812c88399b" alt="CRISPR-CLEAR framework" width="300"></img>
     
   <em>**Figure a:** The workflow illustrates the key steps from guide RNA design to data analysis. First, cells stably expressing a base editor are transduced with a library of guide RNAs tiling the regulatory sequence. After editing, cells are FACS-sorted based on the expression of the target protein. Genomic DNA is extracted from sorted cells. Next-generation libraries are prepared to quantify sgRNA counts and to measure the distribution of edits at the endogenous sequence in the sorted population of cells. The left pathway shows the standard approach using sgRNA count-based readout and the CRISPR-SURF pipeline for deconvolution of functional regions. The right pathway depicts the CRISPR-CLEAR approach using direct allele-based readout and the CRISPR-Millipede pipeline, enabling precise genotype-to-phenotype linkage through per-allele and per-nucleotide analysis.</em>
+
+After performing the screen, you should have targetted amplicon-sequencing FASTQs for each of your phenotypic populations (i.e. different FACS gates along with the pre-sort sample) for multiple biological replicates. An overview of the pipeline is to 1) first quality-control using FASTQC to ensure sufficient read quality of all samples, 2) run all the samples through CRISPResso2 to characterize the introduced alleles in your samples, 3) encode the alleles in a numerical representation for Millipede modelling 4) and lastly perform the Millipede modelling to attain your results. See **Figure b** below for a schematic of the pipeline steps:
 
 <img src="https://github.com/user-attachments/assets/0cbb44c8-e073-44c3-be54-fa6239871895" alt="CRISPR-CLEAR framework" width="300"></img>
 
@@ -21,7 +35,7 @@ You will also need to run CRISPResso2, a *Pinello Lab* tool, to prepare the inpu
 ***Did you also directly sequence your guide RNAs?*** It is recommended you do so to compare against the CRISPR-Millipede results from target amplicon-sequencing. You could map your guide sequences using tools from the *Pinello Lab* such as [CRISPR-Correct](https://github.com/pinellolab/CRISPR-Correct) and analyze the resulting counts using [CRISPR-SURF](https://github.com/pinellolab/CRISPR-SURF/tree/master) as done in the original paper! 
 
 ### System Requirements
-CRISPR-Millipede can run on [any operating system where Python versions >=3.8,<3.12 can be installed](https://www.python.org/downloads/operating-systems/). To speed up model performance, CRISPR-Millipede can utilize both CPUs (for multi-threading) and GPUs (for model training) and is highly recommended, though the tool can still work on single core non-GPU computers. 
+CRISPR-Millipede can run on [any operating system where Python versions >=3.8,<3.12 can be installed](https://www.python.org/downloads/operating-systems/). To speed up model performance, CRISPR-Millipede can utilize both CPUs (for multi-threading) and GPUs (for model training) and is highly recommended to allow the pipeline to run in the span of a couple hours, though the tool can still work on single core non-GPU computers but may run in the span of a day for each run attempt. 
 
 ## Instructions
 
@@ -188,7 +202,7 @@ class MillipedeExperimentMergeStrategy(Enum):
     COVARIATE = "COVARIATE"
 ```
 
-The `MillipedeModelType` specifies what likelihoood function to use for model fitting. See the [Millipede documentation](https://millipede.readthedocs.io/en/latest/selection.html for more information. 
+The `MillipedeModelType` specifies what likelihoood function to use for model fitting. See the [Millipede documentation](https://millipede.readthedocs.io/en/latest/selection.html) for more information. 
 ```
 class MillipedeModelType(Enum):
     """

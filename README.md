@@ -49,7 +49,7 @@ Run CRISPResso2 for all samples and replicates. For each sample, CRISPResso2 wil
 
 Import and prepare the parameters of the encoding step by passing in the amplicon sequence (required), the acceptable variant types (optional), predicted editing sites (optional), population colummn suffixes for indexing (required), and encoding edge trimming for reducing sequencing background (optional) to the `EncodingParameters` class.
 
-Below contains the class definition (and default values) of the EncodingParameters that you will need to instantiate:
+Below contains the class definition (and default values) of the `EncodingParameters` that you will need to instantiate:
 
 ```
 @dataclass
@@ -118,7 +118,7 @@ Highly suggested to save the results of the encodings to your drive. Encouraged 
 ```
 prefix_label ="20240916_v1_example_"
 
-cme.save_encodings(encoding_dataframes.encodings_collapsed_merged, sort_column="#Reads_presort", filename="./encoding_dataframes_editor_encodings_rep{}.tsv")
+cme.save_encodings(encoding_dataframes.encodings_collapsed_merged, sort_column="#Reads_presort", filename=prefix_label + "encoding_dataframes_editor_encodings_rep{}.tsv")
 cme.save_encodings(encoding_dataframes.population_wt_encoding_processed, sort_column="#Reads_wt", filename=prefix_label + "encoding_dataframes_wt_encodings_rep{}.tsv")
 cme.save_encodings_df(encoding_dataframes.population_baseline_encoding_processed, filename=prefix_label + "encoding_dataframes_baseline_editor_encodings_rep{}.pkl")
 cme.save_encodings_df(encoding_dataframes.population_target_encoding_processed, filename=prefix_label + "encoding_dataframes_target_editor_encodings_rep{}.pkl")
@@ -126,8 +126,74 @@ cme.save_encodings_df(encoding_dataframes.population_presort_encoding_processed,
 cme.save_encodings_df(encoding_dataframes.population_wt_encoding_processed, filename=prefix_label + "encoding_dataframes_wt_encodings_rep{}.pkl")
 ```
 
-### STEP 3: Perform modelling of the encoded dataset (in construction)
+### STEP 3: Perform modelling of the encoded dataset
+*Now that we have the encoded representation of the alleles, we will now perform Millipede modelling off of this representation. For documentation on the Millipede model sub-package, see [here](https://millipede.readthedocs.io/en/latest/getting_started.html).*
 
+Below contains the class definition (and default values) of the `MillipedeDesignMatrixProcessingSpecification` that you will need to instantiate:
+
+@dataclass
+class MillipedeDesignMatrixProcessingSpecification:
+    wt_normalization: bool = True # Normalize the read count base on the unedited allele counts
+    total_normalization: bool = False # Normalize the read count based on the total sum of all allele counts
+    sigma_scale_normalized: bool = False # If using the NormalLikelihoodVariableSelector, determine if the sigma_scale factor will be based on the normalized read count
+    decay_sigma_scale: bool = True # Set the sigma_scale factor based on the decay function
+    K_enriched: Union[float, List[float], List[List[float]]] = 5 # Set the K_enriched value of the decay function
+    K_baseline: Union[float, List[float], List[List[float]]] = 5 # Set the K_baseline value of the decay function
+    a_parameter: Union[float, List[float], List[List[float]]] = 300 # Set the a_parameter of the decay function
+
+Additionally, you will need to specify the type of model as well. Below contains the class definition (and default values) of the `MillipedeModelSpecification` that you will need to instantiate:
+
+@dataclass
+class MillipedeModelSpecification:
+    """
+        Defines all specifications to produce Millipede model(s)
+    """
+    model_types: List[MillipedeModelType] 
+    replicate_merge_strategy: MillipedeReplicateMergeStrategy
+    experiment_merge_strategy: MillipedeExperimentMergeStrategy
+    cutoff_specification: MillipedeCutoffSpecification
+    design_matrix_processing_specification: MillipedeDesignMatrixProcessingSpecification
+    shrinkage_input: Union[MillipedeShrinkageInput, None] = None
+    S: float = 1.0 #S parameter
+    tau: float = 0.01 #tau parameter
+    tau_intercept: float = 1.0e-4
+
+There are sub-classes you will need to instantiate. For instance, the `MillipedeReplicateMergeStrategy` specifies how multiple replicates are handled during modelling:
+```
+class MillipedeReplicateMergeStrategy(Enum):
+    """
+        Defines how separate replicates will be treated during modelling
+    """
+    SEPARATE = "SEPARATE" # Replicates are modelled separately; one model per replicate
+    SUM = "SUM" # (Normalized) counts for all replicates are summed together; one model for all replicates
+    COVARIATE = "COVARIATE" # Replicates are jointly modelled, though replicate ID is included in the model design matrix 
+```
+**Recommended to run one version in `MillipedeReplicateMergeStrategy.SEPARATE` to assess individual replicate consistency, then if successful, run a final model in `MillipedeReplicateMergeStrategy.COVARIATE`
+    
+Likewise, the `MillipedeExperimentMergeStrategy` specifies how multiple experiments (i.e. screens with different editors) are handled during modelling.
+```
+class MillipedeExperimentMergeStrategy(Enum):
+    """
+        Defines how separate experiments will be treated during modelling
+    """
+    SEPARATE = "SEPARATE"
+    SUM = "SUM"
+    COVARIATE = "COVARIATE"
+```
+
+The `MillipedeModelType` specifies what likelihoood function to use for model fitting. See the [Millipede documentation](https://millipede.readthedocs.io/en/latest/selection.html for more information. 
+```
+class MillipedeModelType(Enum):
+    """
+        Defines the Millipede model likelihood function used
+    """
+    NORMAL = "NORMAL"
+    NORMAL_SIGMA_SCALED = "NORMAL_SIGMA_SCALED"
+    BINOMIAL = "BINOMIAL"
+    NEGATIVE_BINOMIAL = "NEGATIVE_BINOMIAL"
+```
+
+Here is an example of specifying the complete input parameters for modelling:
 ```
 from crispr_millipede import encoding as cme
 from crispr_millipede import modelling as cmm

@@ -4,6 +4,15 @@
 
 CRISPR-Millipede was developed by the *Pinello Lab* as an easy-to-use Python package for <ins> processing targeted amplicon-sequencing of tiled sequences from base-editing tiling screens to identify functional nucleotides</ins>. By providing amplicon-sequencing of installed alleles from multiple phenotypic populations, CRISPR-Millipede identifies the single-variants that contribute to differences in phenotype. See [this preprint](https://www.biorxiv.org/content/10.1101/2024.09.09.612085v1) for more information on this method! It is expected that you are familiar with Python, command-line tools, and CRISPR screens to follow this guide.
 
+**Sections**
+- [Notes on Experimental Design and Expected Inputs](#notes-on-experimental-design-and-expected-inputs)
+- [Installation](#installation)
+- [System Requirements](#system-requirements)
+- [Instructions](#instructions)
+  -  [STEP 1: Run CRISPResso2 to generate allele tables](#step-1-run-crispresso2-to-generate-allele-tables)
+  -  [STEP 2: Encode the CRISPResso2 outputs into matrices](#step-2-encode-the-crispresso2-outputs-into-matrices)
+  -  [STEP 3: Perform modelling of the encoded dataset](#step-3-perform-modelling-of-the-encoded-dataset)
+  
 ### Notes on Experimental Design and Expected Inputs
 *Skip this and scroll further down if interested in the tool usage*
 - This tool is best used for pooled CRISPR saturation mutagenesis screens of a single focused region. 

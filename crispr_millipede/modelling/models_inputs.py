@@ -156,9 +156,9 @@ class MillipedeDesignMatrixProcessingSpecification:
     total_normalization: bool = False
     sigma_scale_normalized: bool = False
     decay_sigma_scale: bool = True
-    K_enriched: float = 1
-    K_baseline: float = 1
-    a_parameter: float = 300
+    K_enriched: Union[float, List[float], List[List[float]]] = 5
+    K_baseline: Union[float, List[float], List[List[float]]] = 5
+    a_parameter: Union[float, List[float], List[List[float]]] = 300
     set_offset_as_default: bool = False
     set_offset_as_total_reads: bool = False
     set_offset_as_enriched: bool = False

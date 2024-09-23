@@ -480,8 +480,8 @@ class MillipedeInputDataExperimentalGroup:
                                                        presort_pop_df_reads_colname=presort_pop_df_reads_colname,
                                                        sigma_scale_normalized= design_matrix_processing_specification.sigma_scale_normalized,
                                                        decay_sigma_scale= design_matrix_processing_specification.decay_sigma_scale,
-                                                       K_enriched=design_matrix_processing_specification.K_enriched,
-                                                       K_baseline=design_matrix_processing_specification.K_baseline,
+                                                       K_enriched=design_matrix_processing_specification.K_enriched, 
+                                                       K_baseline=design_matrix_processing_specification.K_baseline, 
                                                        a_parameter=design_matrix_processing_specification.a_parameter,
                                                        set_offset_as_default=design_matrix_processing_specification.set_offset_as_default,
                                                        set_offset_as_total_reads=design_matrix_processing_specification.set_offset_as_total_reads,
@@ -512,7 +512,7 @@ class MillipedeInputDataExperimentalGroup:
                     merged_experiments_df: List[pd.DataFrame]
                     merged_experiments_df = [pd.concat([self.__get_intercept_df(merged_experiment_df_list), pd.concat(merged_experiment_df_i, ignore_index=True)], axis=1) for merged_experiment_df_i in merged_experiment_df_list]
                     merged_experiments_df = [merged_experiments_df_i.fillna(0.0) for merged_experiments_df_i in merged_experiments_df] # TODO 20221021: This is to ensure all intercept values are assigned (since NaNs exist with covariate by experiment) - there is possible if there are other NaN among features that it will be set to 0 unintentionally
-                    merged_experiments_df = [__add_supporting_columns_partial(encoding_df = merged_experiments_df_i) for merged_experiments_df_i in merged_experiments_df]
+                    merged_experiments_df = [__add_supporting_columns_partial(encoding_df = merged_experiments_df_i) for replicate_i, merged_experiments_df_i in enumerate(merged_experiments_df)]
                     #merged_experiments_df = [merged_experiments_df_i[merged_experiments_df_i["total_reads"] > 0] for merged_experiments_df_i in merged_experiments_df] # Ensure non-zero reads to prevent error during modelling
                     
                     data = merged_experiments_df
@@ -528,13 +528,13 @@ class MillipedeInputDataExperimentalGroup:
             elif experiment_merge_strategy == MillipedeExperimentMergeStrategy.SEPARATE:
                 if replicate_merge_strategy in [MillipedeReplicateMergeStrategy.SEPARATE, MillipedeReplicateMergeStrategy.MODELLED_SEPARATE]:
                     merged_experiment_df_list: List[List[pd.DataFrame]]
-                    merged_experiment_df_list = [[__add_supporting_columns_partial(encoding_df = merged_rep_df) for merged_rep_df in merged_rep_df_list] for merged_rep_df_list in merged_experiment_df_list]
+                    merged_experiment_df_list = [[__add_supporting_columns_partial(encoding_df = merged_rep_df, experiment_i=experiment_i, replicate_i=replicate_i) for replicate_i, merged_rep_df in enumerate(merged_rep_df_list)] for experiment_i, merged_rep_df_list in enumerate(merged_experiment_df_list)]
                     #merged_experiment_df_list = [[merged_rep_df[merged_rep_df["total_reads"] > 0] for merged_rep_df in merged_rep_df_list] for merged_rep_df_list in merged_experiment_df_list] # Ensure non-zero reads to prevent error during modelling
 
                     data = merged_experiment_df_list
                 elif replicate_merge_strategy in [MillipedeReplicateMergeStrategy.SUM, MillipedeReplicateMergeStrategy.COVARIATE, MillipedeReplicateMergeStrategy.MODELLED_COMBINED]:
                     merged_experiment_df_list: List[pd.DataFrame]
-                    merged_experiment_df_list = [__add_supporting_columns_partial(encoding_df = merged_reps_df) for merged_reps_df in merged_experiment_df_list]
+                    merged_experiment_df_list = [__add_supporting_columns_partial(encoding_df = merged_reps_df, experiment_i=experiment_i) for experiment_i, merged_reps_df in enumerate(merged_experiment_df_list)]
                     #merged_experiment_df_list = [merged_reps_df[merged_reps_df["total_reads"] > 0] for merged_reps_df in merged_experiment_df_list]
 
                     data = merged_experiment_df_list
@@ -652,20 +652,46 @@ class MillipedeInputDataExperimentalGroup:
                                  presort_pop_df_reads_colname: Optional[str],
                                  sigma_scale_normalized: bool,
                                  decay_sigma_scale: bool,
-                                 K_enriched: float,
-                                 K_baseline: float,
-                                 a_parameter: float,
+                                 K_enriched: Union[float, List[float], List[List[float]]],
+                                 K_baseline: Union[float, List[float], List[List[float]]],
+                                 a_parameter: Union[float, List[float], List[List[float]]],
                                  set_offset_as_default: bool,
                                  set_offset_as_total_reads: bool,
                                  set_offset_as_enriched: bool,
                                  set_offset_as_baseline: bool,
                                  set_offset_as_presort: bool,
                                  offset_normalized: bool,
-                                 offset_psuedocount: int
+                                 offset_psuedocount: int,
+                                 experiment_i: Optional[int] = None,
+                                 replicate_i: Optional[int] = None
                                 ) -> pd.DataFrame:
         # construct the simplest possible continuous-valued response variable.
         # this response variable is in [-1, 1]
         
+        # Get intercept exp and reps for setting :
+        intercept_columns = [col for col in  encoding_df.columns if "intercept" in col]
+        if len(intercept_columns) > 0:
+            exp_indices = []
+            rep_indices = []
+            for col in intercept_columns:
+                rep_index = col.find("rep")
+                if rep_index != -1:
+                    intercept_rep_i = col[(rep_index + len("rep")):]
+                    rep_indices.append(intercept_rep_i)
+                    exp_index = col.find("exp")
+                    if exp_index != -1:
+                        intercept_exp_i = col[(exp_index + len("exp")):rep_index-1]
+                        exp_indices.append(intercept_exp_i)
+                    else:
+                        raise Exception(f"No exp found in intercept column {col}. This is a developer bug, contact developers (see the cripsr-millipeede GitHub page for contact)")
+                else:
+                    exp_index = col.find("exp")
+                    if exp_index != -1:
+                        intercept_exp_i = col[(exp_index + len("exp")):]
+                        exp_indices.append(intercept_exp_i)
+                        rep_indices.append(replicate_i) # Add the explit replicate ID if only the experiment ID was found in the intercept column
+        
+
         # Original
         enriched_read_counts = encoding_df[enriched_pop_df_reads_colname]
         baseline_read_counts = encoding_df[baseline_pop_df_reads_colname]
@@ -677,18 +703,72 @@ class MillipedeInputDataExperimentalGroup:
         # create scale_factor for normal likelihood model
         #if 'scale_factor' not in encoding_df.columns: 
             #encoding_df['scale_factor'] = 1.0 / np.sqrt(encoding_df['total_reads']) # NOTE: Intentionally keeping the total_reads as the raw to avoid being impact by normalization - this could be subject to change
-        if 'scale_factor' not in encoding_df.columns: 
-            if sigma_scale_normalized:
-                if decay_sigma_scale:
-                    encoding_df['scale_factor'] = ((decay_function(encoding_df[enriched_pop_df_reads_colname], K_enriched, a_parameter))  + (decay_function(encoding_df[baseline_pop_df_reads_colname], K_baseline, a_parameter)))/2 # NOTE: Intentionally keeping the total_reads as the raw to avoid being impact by normalization - this could be subject to change
+        if 'scale_factor' not in encoding_df.columns:
+            def set_scale_factor(input_encoding_df, K_enriched_selected, K_baseline_selected, a_parameter_selected):
+                if sigma_scale_normalized:
+                    if decay_sigma_scale:
+                        input_encoding_df['scale_factor'] = ((decay_function(input_encoding_df[enriched_pop_df_reads_colname], K_enriched_selected, a_parameter_selected))  + (decay_function(input_encoding_df[baseline_pop_df_reads_colname], K_baseline_selected, a_parameter_selected)))/2 
+                    else:
+                        input_encoding_df['scale_factor'] = (K_enriched_selected / np.sqrt(input_encoding_df[enriched_pop_df_reads_colname])) + (input_encoding_df / np.sqrt(input_encoding_df[baseline_pop_df_reads_colname]))
                 else:
-                    encoding_df['scale_factor'] = (K_enriched / np.sqrt(encoding_df[enriched_pop_df_reads_colname])) + (K_baseline / np.sqrt(encoding_df[baseline_pop_df_reads_colname]))
-            else:
-                if decay_sigma_scale:
-                    encoding_df['scale_factor'] = ((decay_function(encoding_df[enriched_pop_df_reads_colname + "_raw"], K_enriched, a_parameter)) + (decay_function(encoding_df[baseline_pop_df_reads_colname + "_raw"], K_baseline, a_parameter)))/2  # NOTE: Intentionally keeping the total_reads as the raw to avoid being impact by normalization - this could be subject to change
-                else:
-                    encoding_df['scale_factor'] = (K_enriched / np.sqrt(encoding_df[enriched_pop_df_reads_colname + "_raw"])) + (K_baseline / np.sqrt(encoding_df[baseline_pop_df_reads_colname + "_raw"]))
+                    if decay_sigma_scale:
+                        input_encoding_df['scale_factor'] = ((decay_function(input_encoding_df[enriched_pop_df_reads_colname + "_raw"], K_enriched_selected, a_parameter_selected)) + (decay_function(input_encoding_df[baseline_pop_df_reads_colname + "_raw"], K_baseline_selected, a_parameter_selected)))/2 
+                    else:
+                        input_encoding_df['scale_factor'] = (K_enriched_selected / np.sqrt(input_encoding_df[enriched_pop_df_reads_colname + "_raw"])) + (K_baseline_selected / np.sqrt(input_encoding_df[baseline_pop_df_reads_colname + "_raw"]))
+                return input_encoding_df
 
+
+            def retrieve_sample_parameter(parameter_input, experiment_index, replicate_index):
+                if type(parameter_input) is list:
+                    assert replicate_index is not None, "Replicate index must be provided"
+                    if type(parameter_input[0] is list):
+                        assert experiment_index is not None, "Experiment index must be provided"
+                        parameter_input_selected = parameter_input[experiment_index][replicate_index]
+                    else:
+                        parameter_input_selected = parameter_input[rep_index]
+                else:
+                    parameter_input_selected = parameter_input
+                return parameter_input_selected
+    
+            # If the encoding as intercept columns, then extract the available exp/rep indices, subset by each exp/rep, get the correct sigma_scale parameters, and update the encoding DF
+            if intercept_columns:
+                # Iterate through each intercept index to get exp/rep index
+                sample_encoding_df_list = []
+                for intercept_index, intercept_col in enumerate(intercept_columns):
+                    exp_index = exp_indices[intercept_index]
+                    rep_index = rep_indices[intercept_index]
+                    
+                    # Get the corresponding sigma scale parameter based on the exp/rep index
+                    K_enriched_selected = retrieve_sample_parameter(K_enriched)
+                    K_baseline_selected = retrieve_sample_parameter(K_baseline)
+                    a_parameter_selected = retrieve_sample_parameter(a_parameter)
+
+                    # Subset the encoding by the intercept index and add scale factor
+                    sample_encoding_df = encoding_df[encoding_df[intercept_col] == 1]
+                    sample_encoding_df = set_scale_factor(sample_encoding_df, K_enriched_selected=K_enriched_selected, K_baseline_selected=K_baseline_selected, a_parameter_selected=a_parameter_selected)
+                    sample_encoding_df_list.append(sample_encoding_df)
+                
+                # Concatenate all the updated sample encoding DFs into the complete encoding DF
+                encoding_df = pd.concat(sample_encoding_df_list, axis=0)
+            
+            else: # If there are no intercept columns, see if explicit experiment or replicate index is provided
+                if replicate_i is None:
+                    if experiment_i is None:
+                        # If no explicit experiment or replicate index is provided, then expecting a single sigma_scale parameter but must assert the input first
+                        assert isinstance(K_enriched, (int, float)), f"K_enriched {K_enriched} and all sigma_scale_parameters (K_enriched, K_baseline, a_parameter) must be an int/float type"
+                        assert isinstance(K_baseline, (int, float)), f"K_baseline {K_baseline} and all sigma_scale_parameters (K_enriched, K_baseline, a_parameter) must be an int/float type"
+                        assert isinstance(a_parameter, (int, float)), f"a_parameter {a_parameter} and all sigma_scale_parameters (K_enriched, K_baseline, a_parameter) must be an int/float type"
+                        K_enriched_selected = K_enriched
+                        K_baseline_selected = K_baseline
+                        a_parameter_selected = a_parameter
+                else:
+                    # If replicate (and experiment) index is provided, get the selected sigma_scale parameters
+                    K_enriched_selected = retrieve_sample_parameter(K_enriched, experiment_i, replicate_i)
+                    K_baseline_selected = retrieve_sample_parameter(K_baseline, experiment_i, replicate_i)
+                    a_parameter_selected = retrieve_sample_parameter(a_parameter, experiment_i, replicate_i)
+                
+                encoding_df = set_scale_factor(encoding_df, K_enriched_selected=K_enriched_selected, K_baseline_selected=K_baseline_selected, a_parameter_selected=a_parameter_selected)
+            
         if 'psi0' not in encoding_df.columns:
             if set_offset_as_default:
                 encoding_df['psi0'] = 0

@@ -41,7 +41,7 @@ After performing the screen, you should have targetted amplicon-sequencing FASTQ
 <em>**Figure b:** Schematic of CRISPR-Millipede workflow.</em>
 
 ### Installation
-CRISPR-Millipede can be easily installed from PyPi `pip install crispr-millipede`, which should only take a couple minutes. CRISPR-Millipede requires **Python versions >=3.8,<3.12** which can be installed from the [Python download page](https://www.python.org/downloads/). 
+CRISPR-Millipede can be easily installed from PyPi `pip install crispr-millipede`, which should only take a couple minutes. CRISPR-Millipede requires **Python versions >=3.9,<3.12** which can be installed from the [Python download page](https://www.python.org/downloads/). 
 
 You will also need to run CRISPResso2, a *Pinello Lab* tool, to prepare the input for CRISPR-Millipede. See the [CRISPResso2 repository](https://github.com/pinellolab/CRISPResso2) for installation instructions.
 

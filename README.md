@@ -41,14 +41,34 @@ After performing the screen, you should have targetted amplicon-sequencing FASTQ
 <em>**Figure b:** Schematic of CRISPR-Millipede workflow.</em>
 
 ### Installation
-CRISPR-Millipede can be easily installed from PyPi `pip install crispr-millipede`, which should only take a couple minutes. CRISPR-Millipede requires **Python versions >=3.9,<3.12** which can be installed from the [Python download page](https://www.python.org/downloads/). 
+CRISPR-Millipede requires **Python versions >=3.10,<3.12** which can be installed from the [Python download page](https://www.python.org/downloads/) or via **Conda** (see installation of Conda [here]). Optionally, can use [**mamba**](https://github.com/mamba-org/mamba/blob/main/README.md) for faster installation. For installing Python via Conda:
+
+```conda install python=3.10```.
+
+Additionally, CRISPR-Millipede requires the **PyTorch**, which can be installed via **Conda**. If your computer does not have a CPU, install the CPU-version of PyTorch:
+
+```conda install pytorch```
+
+If you have a GPU, ensure that you have CUDA installed by checking the CUDA version (i.e. version 11.8):
+
+```nvcc --version```
+
+If you don't have CUDA installed, follow the [NVIDIA CUDA installation guide](https://docs.nvidia.com/cuda/cuda-installation-guide-microsoft-windows/index.html).
+
+Then, install the appropriate GPU version of PyTorch with the correct version of the **pytorch-cuda** based on the CUDA version installed on your OS (i.e. version 11.8):
+
+```conda install pytorch torchvision torchaudio pytorch-cuda=11.8 -c pytorch -c nvidia```
+
+Once you have all Python and PyTorch dependencies installed, CRISPR-Millipede can easily be installed from PyPi which should only take a few minutes. PIP will ensure that all Python package dependencies are installed:
+
+```pip install crispr-millipede```, 
 
 You will also need to run CRISPResso2, a *Pinello Lab* tool, to prepare the input for CRISPR-Millipede. See the [CRISPResso2 repository](https://github.com/pinellolab/CRISPResso2) for installation instructions.
 
 ***Did you also directly sequence your guide RNAs?*** It is recommended you do so to compare against the CRISPR-Millipede results from target amplicon-sequencing. You could map your guide sequences using tools from the *Pinello Lab* such as [CRISPR-Correct](https://github.com/pinellolab/CRISPR-Correct) and analyze the resulting counts using [CRISPR-SURF](https://github.com/pinellolab/CRISPR-SURF/tree/master) as done in the original paper! 
 
 ### System Requirements
-CRISPR-Millipede can run on [any operating system where Python versions >=3.9,<3.12 can be installed](https://www.python.org/downloads/operating-systems/). To speed up model performance, CRISPR-Millipede can utilize both CPUs (for multi-threading) and GPUs (for model training) and is highly recommended to allow the pipeline to run in the span of a couple hours, though the tool can still work on single core non-GPU computers but may run in the span of a day for each run attempt. 
+CRISPR-Millipede can run on [any operating system where Python versions >=3.10,<3.12 can be installed](https://www.python.org/downloads/operating-systems/) and where [PyTorch can be installed](https://pytorch.org/get-started/locally/). To speed up model performance, CRISPR-Millipede can utilize both CPUs (for multi-threading) and GPUs (for model training) and is highly recommended to allow the pipeline to run in the span of a couple hours, though the tool can still work on single core non-GPU computers but may run in the span of a day for each run attempt depending on the FASTQ sizes. 
 
 ## Instructions
 

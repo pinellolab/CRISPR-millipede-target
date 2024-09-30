@@ -49,13 +49,13 @@ Additionally, CRISPR-Millipede requires the **PyTorch**, which can be installed 
 
 ```conda install pytorch```
 
-If you have a GPU, ensure that you have CUDA installed by checking the CUDA version (i.e. version 11.8):
+If you have a GPU, ensure that you have CUDA installed by checking the CUDA version (for example version 11.8):
 
 ```nvcc --version```
 
 If you don't have CUDA installed, follow the [NVIDIA CUDA installation guide](https://docs.nvidia.com/cuda/cuda-installation-guide-microsoft-windows/index.html).
 
-Then, install the appropriate GPU version of PyTorch with the correct version of the **pytorch-cuda** based on the CUDA version installed on your OS (i.e. version 11.8):
+Then, install the appropriate GPU version of PyTorch with the correct version of the **pytorch-cuda** based on the CUDA version installed on your OS (for example version 11.8):
 
 ```conda install pytorch torchvision torchaudio pytorch-cuda=11.8 -c pytorch -c nvidia```
 

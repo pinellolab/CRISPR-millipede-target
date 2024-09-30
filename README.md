@@ -41,7 +41,7 @@ After performing the screen, you should have targetted amplicon-sequencing FASTQ
 <em>**Figure b:** Schematic of CRISPR-Millipede workflow.</em>
 
 ### Installation
-CRISPR-Millipede requires **Python versions >=3.10,<3.12** which can be installed from the [Python download page](https://www.python.org/downloads/) or via **Conda** (see installation of Conda [here]). Optionally, can use [**mamba**](https://github.com/mamba-org/mamba/blob/main/README.md) for faster installation. For installing Python via Conda:
+CRISPR-Millipede requires **Python versions >=3.10,<3.12** which can be installed from the [Python download page](https://www.python.org/downloads/) or via **Conda** (see installation of Conda [here](https://docs.conda.io/projects/conda/en/latest/user-guide/install/index.html)). Optionally, can use [**mamba**](https://github.com/mamba-org/mamba/blob/main/README.md) for faster installation. For installing Python via Conda:
 
 ```conda install python=3.10```.
 

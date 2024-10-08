@@ -12,10 +12,10 @@ import matplotlib.patches as patches
 DUMMY_MAPPING_DICT = {"ABE8e":{"A":"A>C","C":"C>A", "G":"G>T", "T":"T>A"}, "evoCDA":{"A":"A>C","C":"C>G", "G":"G>T", "T":"T>A"}}
 POSSIBLE_EDITS = {"ABE8e":["A>G", "T>C"], "evoCDA":["C>T", "G>A"]}
 
-def fix_sigma_hits(path, editor):
+def fix_sigma_hits(path, editor, amplicon):
     sigma_hits = pd.read_csv(path)
 
-    for idx, base in enumerate(AMPLICON):
+    for idx, base in enumerate(amplicon):
         new_row = pd.DataFrame([{'Unnamed: 0': f"{idx}{DUMMY_MAPPING_DICT[editor][base]}"}])
         sigma_hits = pd.concat([sigma_hits, new_row], ignore_index=True)
 
@@ -29,11 +29,11 @@ def fix_sigma_hits(path, editor):
 
     return sigma_hits.fillna(-9999)
 
-def add_dummy_edits(path, editor):
+def add_dummy_edits(path, editor, amplicon):
     editing = pd.read_csv(path)
     editing = editing[editing["FullChange"].str.contains("|".join(POSSIBLE_EDITS[editor]))]
 
-    for idx, base in enumerate(AMPLICON):
+    for idx, base in enumerate(amplicon):
         for possible_edit in POSSIBLE_EDITS[editor]:
             if f"{idx}{possible_edit}" in editing["FullChange"].values:
                 continue
@@ -49,9 +49,9 @@ def add_dummy_edits(path, editor):
 
 
 
-def millipede_dataframe_cleanup(path, editor):
+def millipede_dataframe_cleanup(path, editor, amplicon):
 
-    millipede_dataframe = fix_sigma_hits(path, editor)
+    millipede_dataframe = fix_sigma_hits(path, editor, amplicon)
     millipede_dataframe.reset_index(drop=False, inplace=True)
 
     #CleanUp dataframe
@@ -99,10 +99,10 @@ def millipede_dataframe_cleanup(path, editor):
 
     return millipede_dataframe_Betas_pivot, millipede_dataframe_PIPS_pivot
 
-def edit_dataframe_cleanup(editor, PresortPath, WTPath, binarized_thresh):
+def edit_dataframe_cleanup(editor, PresortPath, WTPath, binarized_thresh, amplicon):
 
-    presort = add_dummy_edits(PresortPath, editor)
-    WT = add_dummy_edits(WTPath, editor)
+    presort = add_dummy_edits(PresortPath, editor, amplicon)
+    WT = add_dummy_edits(WTPath, editor, amplicon)
 
     # Step 2: Rename the 'editing efficiency' columns for clarity
     presort = presort.rename(columns={'Editing Efficiency': 'EditingEfficiencyPresort'})
@@ -164,9 +164,9 @@ def edit_dataframe_cleanup(editor, PresortPath, WTPath, binarized_thresh):
     return binarized_df_pivot, orange_labels
 
 
-def plot_millipede_boardplot(editor, path, pathPresort, pathWT, start, end, binarized_thresh=1.5, fig_width = 8, fig_height = 2, outputPath = None):
-    millipede_dataframe_Betas_pivot, millipede_dataframe_PIPS_pivot = millipede_dataframe_cleanup(path, editor)
-    binarized_df, orange_labels = edit_dataframe_cleanup(editor, pathPresort, pathWT,binarized_thresh)
+def plot_millipede_boardplot(editor, path, pathPresort, pathWT, start, end, amplicon, binarized_thresh=1.5, fig_width = 8, fig_height = 2, outputPath = None):
+    millipede_dataframe_Betas_pivot, millipede_dataframe_PIPS_pivot = millipede_dataframe_cleanup(path, editor, amplicon)
+    binarized_df, orange_labels = edit_dataframe_cleanup(editor, pathPresort, pathWT,binarized_thresh, amplicon)
 
     if millipede_dataframe_Betas_pivot is None or millipede_dataframe_PIPS_pivot is None:
         print("Data not loaded properly")

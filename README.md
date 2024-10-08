@@ -320,4 +320,9 @@ model_run = cmm.MillipedeModelExperimentalGroup(experiments_inputdata=model_inpu
 ```
 beta_df = paired_end_experiments_models_denoised.millipede_model_specification_set_with_results['model_specification_1'].millipede_model_specification_result_input[0].millipede_model_specification_single_matrix_result[cmm.MillipedeModelType.NORMAL_SIGMA_SCALED].beta
 pip_df = paired_end_experiments_models_denoised.millipede_model_specification_set_with_results['model_specification_1'].millipede_model_specification_result_input[0].millipede_model_specification_single_matrix_result[cmm.MillipedeModelType.NORMAL_SIGMA_SCALED].pip
+sigma_hit_table = paired_end_experiments_models_denoised.millipede_model_specification_set_with_results["joint_replicate_per_experiment_models"].millipede_model_specification_result_input[0].millipede_model_specification_single_matrix_result[cmm.MillipedeModelType.NORMAL_SIGMA_SCALED].summary
+
 ```
+**Model Output Table:** The output table (sigma_hit_table) will look like this where for each covariate you are given a PIP, Beta, Conditional PIP, and Conditional Beta
+
+<img width="721" alt="Screenshot 2024-10-08 at 5 17 55 PM" src="https://github.com/user-attachments/assets/9b946fc2-c7dd-43c6-98e7-4bf90864de01">

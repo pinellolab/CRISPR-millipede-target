@@ -15,7 +15,7 @@
   -  [STEP 1: Run CRISPResso2 to generate allele tables](#step-1-run-crispresso2-to-generate-allele-tables)
   -  [STEP 2: Encode the CRISPResso2 outputs into matrices](#step-2-encode-the-crispresso2-outputs-into-matrices)
   -  [STEP 3: Perform modelling of the encoded dataset](#step-3-perform-modelling-of-the-encoded-dataset)
-  -  [STEP 4: Visualization using boardplots]
+  -  [STEP 4: Visualization using boardplots](#step-4-generate-board-plots)
   
 ### Notes on Experimental Design and Expected Inputs
 *Skip this and scroll further down if interested in the tool usage*

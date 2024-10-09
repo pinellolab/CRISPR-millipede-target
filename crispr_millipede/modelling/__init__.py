@@ -24,3 +24,5 @@ from .utility import (save_or_load_pickle,
 
 from .pydeseq import (run_pydeseq2, visualize_deseq2_result)
 
+from .board_plot_visualization import (plot_millipede_boardplot)
+

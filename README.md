@@ -350,6 +350,7 @@ paired_merged_raw_encodings_editing_freqs.ctrl_pop_encoding_editing_per_variant_
 cmm.plot_millipede_boardplot("ABE8e", 'CD19_ABE8e_sigma_hit_table_ZP.csv', 'presort_editing_freqs_avg_ABE8e_1_89.csv' , 'wt_editing_freqs_avg_ABE8e_1_89.csv', 204,244, AMPLICON, outputPath = "BoardplotABE8e.svg")
 
 ```
+<img width="668" alt="Screenshot 2024-10-09 at 2 37 18 PM" src="https://github.com/user-attachments/assets/a698298c-3d54-49b6-b94b-cdf3c6d329e4">
 
 
 

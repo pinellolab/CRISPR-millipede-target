@@ -350,7 +350,7 @@ paired_merged_raw_encodings_editing_freqs.baseline_pop_encoding_editing_per_vari
 paired_merged_raw_encodings_editing_freqs.enriched_pop_encoding_editing_per_variant_freq_avg[0].to_csv('target_editing_freqs_avg_editor.csv')
 paired_merged_raw_encodings_editing_freqs.ctrl_pop_encoding_editing_per_variant_freq_avg[0].to_csv('wt_editing_freqs_avg_editor.csv')
 
-cmm.plot_millipede_boardplot(editorName (A or C), 'MillipedeOutput.csv', 'presort_editing_freqs_avg_editor.csv' , 'wt_editing_freqs_avg_editor.csv', start,end, AMPLICON, outputPath = "Boardplot.svg")
+cmm.plot_millipede_boardplot(editorName (ABE8e or evoCDA), 'MillipedeOutput.csv', 'presort_editing_freqs_avg_editor.csv' , 'wt_editing_freqs_avg_editor.csv', start,end, AMPLICON, outputPath = "Boardplot.svg")
 
 ```
 <img width="668" alt="Screenshot 2024-10-09 at 2 37 18 PM" src="https://github.com/user-attachments/assets/a698298c-3d54-49b6-b94b-cdf3c6d329e4">

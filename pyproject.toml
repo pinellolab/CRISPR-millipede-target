@@ -1,13 +1,13 @@
 [tool.poetry]
 name = "crispr-millipede"
-version = "0.1.88"
+version = "0.1.94"
 description = ""
 authors = ["Basheer Becerra <bbecerr@outlook.com>"]
 readme = "README.md"
 packages = [{include = "crispr_millipede"}]
 
 [tool.poetry.dependencies]
-python = ">=3.8,<3.12"
+python = ">=3.10,<3.12"
 numpy = "1.24.4"
 scipy = "^1.10.1"
 matplotlib = "^3.7.1"
@@ -16,8 +16,8 @@ pandarallel = "^1.6.4"
 ipywidgets = "^8.1.2"
 typeguard = "^3.0.2"
 pandas = "^1.5.3"
-millipede-regression = "0.1.2"
-seaborn = "^0.11.2"
+millipede-regression = "0.1.6"
+seaborn = "^0.13.2"
 crispr-shrinkage = "0.1.63"
 pydeseq2 = "0.4.4"
 plotly = "5.9.0"

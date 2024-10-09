@@ -72,6 +72,12 @@ You will also need to run CRISPResso2, a *Pinello Lab* tool, to prepare the inpu
 ### System Requirements
 CRISPR-Millipede can run on [any operating system where Python versions >=3.10,<3.12 can be installed](https://www.python.org/downloads/operating-systems/) and where [PyTorch can be installed](https://pytorch.org/get-started/locally/). To speed up model performance, CRISPR-Millipede can utilize both CPUs (for multi-threading) and GPUs (for model training) and is highly recommended to allow the pipeline to run in the span of a couple hours, though the tool can still work on single core non-GPU computers but may run in the span of a day for each run attempt depending on the FASTQ sizes. 
 
+### Installation and Run Time
+On a Macbook Pro (M2 Chip with 32 GB ram)
+Installation takes about 1 min 20 secs via pip after installing PyTorch 
+Running Step 4 (model_run = cmm.MillipedeModelExperimentalGroup(experiments_inputdata=model_input_data, device=cmm.MillipedeComputeDevice.CPU) takes about 2 minutes for the sg218 example in notebook
+
+
 ## Instructions
 
 ### STEP 1: Run CRISPResso2 to generate allele tables

@@ -74,8 +74,8 @@ CRISPR-Millipede can run on [any operating system where Python versions >=3.10,<
 
 ### Installation and Run Time
 On a Macbook Pro (M2 Chip with 32 GB ram)
-Installation takes about 1 min 20 secs via pip after installing PyTorch 
-Running Step 4 (model_run = cmm.MillipedeModelExperimentalGroup(experiments_inputdata=model_input_data, device=cmm.MillipedeComputeDevice.CPU) takes about 2 minutes for the sg218 example in notebook
+- Installation takes about 1 min 20 secs via pip after installing PyTorch
+- Running Step 4 (model_run = cmm.MillipedeModelExperimentalGroup(experiments_inputdata=model_input_data, device=cmm.MillipedeComputeDevice.CPU) takes about 2 minutes for the sg218 example in the notebook
 
 
 ## Instructions

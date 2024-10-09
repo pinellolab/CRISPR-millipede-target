@@ -63,7 +63,7 @@ Then, install the appropriate GPU version of PyTorch with the correct version of
 
 Once you have all Python and PyTorch dependencies installed, CRISPR-Millipede can easily be installed from PyPi which should only take a few minutes. PIP will ensure that all Python package dependencies are installed:
 
-```pip install crispr-millipede```, 
+```pip install crispr-millipede==0.1.97```, 
 
 You will also need to run CRISPResso2, a *Pinello Lab* tool, to prepare the input for CRISPR-Millipede. See the [CRISPResso2 repository](https://github.com/pinellolab/CRISPResso2) for installation instructions.
 

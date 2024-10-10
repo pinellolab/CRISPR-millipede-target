@@ -365,5 +365,83 @@ cmm.plot_millipede_boardplot(editorName (ABE8e or evoCDA), 'MillipedeOutput.csv'
 ```
 <img width="668" alt="Screenshot 2024-10-09 at 2 37 18 PM" src="https://github.com/user-attachments/assets/a698298c-3d54-49b6-b94b-cdf3c6d329e4">
 
-### STEP 5: PyDESEQ based analysis
+### STEP 5: PyDESeq2 based analysis
+*The encoded representation of the alleles can also be fed into PyDESeq2, to calculate the differential distribution of each allele across the sorted populations. For documentation on PyDESeq2, see [here](https://pydeseq2.readthedocs.io/en/latest/index.html#).*
 
+*PyDESeq2 takes in a count and design matrix, along with several parameters:*
+
+```
+inference = DefaultInference(n_cpus=8)
+dds = DeseqDataSet(
+    counts=count_df,
+    metadata=metadata_df,
+    design_factors="condition",
+    refit_cooks=True,
+    inference=inference,
+    # n_cpus=8, # n_cpus can be specified here or in the inference object
+)
+```
+*See [notebooks/STEP5_ABE8e_DESeq2_Demo.ipynb](https://github.com/pinellolab/CRISPR-millipede-target/blob/master/notebooks/STEP5_ABE8e_DESeq2_Demo.ipynb) for instructions on how to format the input matrices and run PyDESeq2.*
+
+*After running pyDESeq2, we can visualize a volcano plot of the per-allele scores derived through the model:*
+
+```
+def contains_edit_special(edit, edit2):
+    colors = []
+    sizes = []
+    
+    subset_df = results_df.copy()
+    
+    for index, row in subset_df.iterrows():
+        if len(set(edit).intersection(set(index.split(",")))) > 0:
+            colors.append("#00AEEF")
+            sizes.append(40)
+        elif len(set(edit2).intersection(set(index.split(",")))) > 0:
+            colors.append("#EC008C")
+            sizes.append(40)
+        else:
+            colors.append("gray")
+            sizes.append(40)
+            subset_df.drop(index, inplace=True)
+    
+    # Create the plot
+    plt.figure(figsize=(8, 5))
+    
+    # Scatter plot
+    plt.scatter(results_df['log2FoldChange'] * -1, 
+                results_df['-10 * log(pvalue)'],
+                c=colors, s=sizes, alpha=0.3)
+    
+    # Set x-axis to log2 scale
+    plt.xscale('symlog', base=2)
+    
+    # Set axis labels and title
+    plt.xlabel("Log2 Fold Change [CD19+ vs CD19-]", fontsize=14)
+    plt.ylabel("-10 * log10(pvalue)", fontsize=14)
+    plt.title("Volcano Plot", fontsize=16)
+    
+    # Set x-axis limits and ticks
+    plt.xlim(-10, 10)
+    
+    # Set y-axis limits
+    plt.ylim(0, 30)
+    ax = plt.gca()  # Get current axis
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+
+    # Save the figure
+    plt.savefig("ABE8e_allelic_analysis_w_MillipedeHits.svg")
+
+    # Adjust layout and display the plot
+    plt.tight_layout()
+    plt.show()
+    
+    # Display the subset dataframe
+    display(subset_df)
+```
+
+*The parameters "edit1" and "edit2" can be used to selectively color alleles that exhibit certain sets of edits:*
+
+```
+contains_edit_special(["223A>G", "230A>G"], ["151A>G"])
+```

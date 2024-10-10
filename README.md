@@ -69,6 +69,10 @@ You will also need to run CRISPResso2, a *Pinello Lab* tool, to prepare the inpu
 
 ***Did you also directly sequence your guide RNAs?*** It is recommended you do so to compare against the CRISPR-Millipede results from target amplicon-sequencing. You could map your guide sequences using tools from the *Pinello Lab* such as [CRISPR-Correct](https://github.com/pinellolab/CRISPR-Correct) and analyze the resulting counts using [CRISPR-SURF](https://github.com/pinellolab/CRISPR-SURF/tree/master) as done in the original paper! 
 
+PyDESeq2 can also be installed from PyPi, using the following command:
+
+```pip install pydeseq2```
+
 ### System Requirements
 CRISPR-Millipede can run on [any operating system where Python versions >=3.10,<3.12 can be installed](https://www.python.org/downloads/operating-systems/) and where [PyTorch can be installed](https://pytorch.org/get-started/locally/). To speed up model performance, CRISPR-Millipede can utilize both CPUs (for multi-threading) and GPUs (for model training) and is highly recommended to allow the pipeline to run in the span of a couple hours, though the tool can still work on single core non-GPU computers but may run in the span of a day for each run attempt depending on the FASTQ sizes. 
 

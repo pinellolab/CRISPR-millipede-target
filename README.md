@@ -366,9 +366,9 @@ cmm.plot_millipede_boardplot(editorName (ABE8e or evoCDA), 'MillipedeOutput.csv'
 <img width="668" alt="Screenshot 2024-10-09 at 2 37 18 PM" src="https://github.com/user-attachments/assets/a698298c-3d54-49b6-b94b-cdf3c6d329e4">
 
 ### STEP 5: PyDESeq2 based analysis
-*The encoded representation of the alleles can also be fed into PyDESeq2, to calculate the differential distribution of each allele across the sorted populations. For documentation on PyDESeq2, see [here](https://pydeseq2.readthedocs.io/en/latest/index.html#).*
+The encoded representation of the alleles can also be fed into PyDESeq2, to calculate the differential distribution of each allele across the sorted populations. For documentation on PyDESeq2, see [here](https://pydeseq2.readthedocs.io/en/latest/index.html#).
 
-*PyDESeq2 takes in a count and design matrix, along with several parameters:*
+PyDESeq2 takes in a count and design matrix, along with several parameters:
 
 ```
 inference = DefaultInference(n_cpus=8)
@@ -381,9 +381,9 @@ dds = DeseqDataSet(
     # n_cpus=8, # n_cpus can be specified here or in the inference object
 )
 ```
-*See [notebooks/STEP5_ABE8e_DESeq2_Demo.ipynb](https://github.com/pinellolab/CRISPR-millipede-target/blob/master/notebooks/STEP5_ABE8e_DESeq2_Demo.ipynb) for instructions on how to format the input matrices and run PyDESeq2.*
+**See [notebooks/STEP5_ABE8e_DESeq2_Demo.ipynb](https://github.com/pinellolab/CRISPR-millipede-target/blob/master/notebooks/STEP5_ABE8e_DESeq2_Demo.ipynb) for instructions on how to format the input matrices and run PyDESeq2.**
 
-*After running pyDESeq2, we can visualize a volcano plot of the per-allele scores derived through the model:*
+After running pyDESeq2, we can visualize a volcano plot of the per-allele scores derived through the model:
 
 ```
 def contains_edit_special(edit, edit2):
@@ -440,8 +440,10 @@ def contains_edit_special(edit, edit2):
     display(subset_df)
 ```
 
-*The parameters "edit1" and "edit2" can be used to selectively color alleles that exhibit certain sets of edits:*
+The parameters "edit1" and "edit2" can be used to selectively color alleles that exhibit certain sets of edits:
 
 ```
 contains_edit_special(["223A>G", "230A>G"], ["151A>G"])
 ```
+
+![image](https://github.com/user-attachments/assets/32c9451a-bf65-45f4-bf2c-87317ef920fa)

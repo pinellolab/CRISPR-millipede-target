@@ -44,7 +44,7 @@ After performing the screen, you should have targetted amplicon-sequencing FASTQ
 
 ### Installation
 
-CRISPResso2 (required for first step), a *Pinello Lab* tool, to prepare the input for CRISPR-Millipede. See the [CRISPResso2 repository](https://github.com/pinellolab/CRISPResso2) for installation instructions. You can install this in a different conda environment than CRISPR-Millipede (Preferred). If you want it in the same environment install CRISRPresso2 before CRISPR-Millipede. 
+CRISPResso2 isrequired for first step (a *Pinello Lab* tool), to prepare the input for CRISPR-Millipede. See the [CRISPResso2 repository](https://github.com/pinellolab/CRISPResso2) for installation instructions. You can install this in a different conda environment than CRISPR-Millipede (Preferred). If you want it in the same environment install CRISRPresso2 before CRISPR-Millipede. 
 
 CRISPR-Millipede requires **Python versions >=3.10,<3.12** which can be installed from the [Python download page](https://www.python.org/downloads/) or via **Conda** (see installation of Conda [here](https://docs.conda.io/projects/conda/en/latest/user-guide/install/index.html)). Optionally, can use [**mamba**](https://github.com/mamba-org/mamba/blob/main/README.md) for faster installation. For installing Python via Conda:
 

@@ -15,6 +15,8 @@
   -  [STEP 1: Run CRISPResso2 to generate allele tables](#step-1-run-crispresso2-to-generate-allele-tables)
   -  [STEP 2: Encode the CRISPResso2 outputs into matrices](#step-2-encode-the-crispresso2-outputs-into-matrices)
   -  [STEP 3: Perform modelling of the encoded dataset](#step-3-perform-modelling-of-the-encoded-dataset)
+  -  [STEP 4: Visualization using boardplots](#step-4-generate-board-plots)
+  -  [STEP 5: PyDESEQ2 allelic analysis](#step-5-PyDESEQ-based-analysis)
   
 ### Notes on Experimental Design and Expected Inputs
 *Skip this and scroll further down if interested in the tool usage*
@@ -41,6 +43,9 @@ After performing the screen, you should have targetted amplicon-sequencing FASTQ
 <em>**Figure b:** Schematic of CRISPR-Millipede workflow.</em>
 
 ### Installation
+
+CRISPResso2 is required for first step (a *Pinello Lab* tool), to prepare the input for CRISPR-Millipede. See the [CRISPResso2 repository](https://github.com/pinellolab/CRISPResso2) for installation instructions. You can install this in a different conda environment than CRISPR-Millipede (Preferred). If you want it in the same environment install CRISRPresso2 before CRISPR-Millipede. 
+
 CRISPR-Millipede requires **Python versions >=3.10,<3.12** which can be installed from the [Python download page](https://www.python.org/downloads/) or via **Conda** (see installation of Conda [here](https://docs.conda.io/projects/conda/en/latest/user-guide/install/index.html)). Optionally, can use [**mamba**](https://github.com/mamba-org/mamba/blob/main/README.md) for faster installation. For installing Python via Conda:
 
 ```conda install python=3.10```.
@@ -61,14 +66,24 @@ Then, install the appropriate GPU version of PyTorch with the correct version of
 
 Once you have all Python and PyTorch dependencies installed, CRISPR-Millipede can easily be installed from PyPi which should only take a few minutes. PIP will ensure that all Python package dependencies are installed:
 
-```pip install crispr-millipede```, 
-
-You will also need to run CRISPResso2, a *Pinello Lab* tool, to prepare the input for CRISPR-Millipede. See the [CRISPResso2 repository](https://github.com/pinellolab/CRISPResso2) for installation instructions.
+```pip install crispr-millipede==0.1.97```, 
 
 ***Did you also directly sequence your guide RNAs?*** It is recommended you do so to compare against the CRISPR-Millipede results from target amplicon-sequencing. You could map your guide sequences using tools from the *Pinello Lab* such as [CRISPR-Correct](https://github.com/pinellolab/CRISPR-Correct) and analyze the resulting counts using [CRISPR-SURF](https://github.com/pinellolab/CRISPR-SURF/tree/master) as done in the original paper! 
 
+PyDESeq2 can also be installed from PyPi, using the following command:
+
+```pip install pydeseq2```
+
 ### System Requirements
 CRISPR-Millipede can run on [any operating system where Python versions >=3.10,<3.12 can be installed](https://www.python.org/downloads/operating-systems/) and where [PyTorch can be installed](https://pytorch.org/get-started/locally/). To speed up model performance, CRISPR-Millipede can utilize both CPUs (for multi-threading) and GPUs (for model training) and is highly recommended to allow the pipeline to run in the span of a couple hours, though the tool can still work on single core non-GPU computers but may run in the span of a day for each run attempt depending on the FASTQ sizes. 
+
+### Installation and Run Time
+On a Macbook Pro (M2 Chip with 32 GB ram)
+- Installation takes about 1 min 20 secs via pip after installing PyTorch
+- Running Step 1 (CRISPResso2) takes about 5 mins on sg218 example
+- Running Step 2 (Encoding) takes about 20 mins on sg218 example
+- Running Step 3 (Millipede: model_run = cmm.MillipedeModelExperimentalGroup(experiments_inputdata=model_input_data, device=cmm.MillipedeComputeDevice.CPU) takes about 2 minutes for the sg218 example in the notebook
+
 
 ## Instructions
 
@@ -320,4 +335,118 @@ model_run = cmm.MillipedeModelExperimentalGroup(experiments_inputdata=model_inpu
 ```
 beta_df = paired_end_experiments_models_denoised.millipede_model_specification_set_with_results['model_specification_1'].millipede_model_specification_result_input[0].millipede_model_specification_single_matrix_result[cmm.MillipedeModelType.NORMAL_SIGMA_SCALED].beta
 pip_df = paired_end_experiments_models_denoised.millipede_model_specification_set_with_results['model_specification_1'].millipede_model_specification_result_input[0].millipede_model_specification_single_matrix_result[cmm.MillipedeModelType.NORMAL_SIGMA_SCALED].pip
+sigma_hit_table = paired_end_experiments_models_denoised.millipede_model_specification_set_with_results["joint_replicate_per_experiment_models"].millipede_model_specification_result_input[0].millipede_model_specification_single_matrix_result[cmm.MillipedeModelType.NORMAL_SIGMA_SCALED].summary
+
+sigma_hit_table.to_csv('MillipedeOutput.csv', index=True)
+
 ```
+**Model Output Table:** The output table (sigma_hit_table) will look like this where for each covariate you are given a PIP, Beta, Conditional PIP, and Conditional Beta
+
+<img width="721" alt="Screenshot 2024-10-08 at 5 17 55 PM" src="https://github.com/user-attachments/assets/9b946fc2-c7dd-43c6-98e7-4bf90864de01">
+
+### STEP 4: Generate Board Plots
+
+**Board Plots:** Board Plots can be generated by using the board plot function provided in CRISPR-Millipede. Board Plots require the millipede table, presort, and wt editing frequencies which can be generated using the functions below. 
+
+```
+paired_merged_raw_encodings = cmm.RawEncodingDataframesExperimentalGroup().read_in_files_constructor(
+    enriched_pop_fn_encodings_experiment_list = ["./encoding_dataframes_target_editor_encodings_rep{}.pkl"],
+    baseline_pop_fn_encodings_experiment_list = ["./encoding_dataframes_baseline_editor_encodings_rep{}.pkl"],
+    presort_pop_fn_encodings_experiment_list = ["./encoding_dataframes_presort_editor_encodings_rep{}.pkl"],
+    experiment_labels = ["ABE8e"],
+    ctrl_pop_fn_encodings="./encoding_dataframes_wt_editor_encodings_rep{}.pkl",
+    ctrl_pop_labels="WT",
+    reps = [0,1,2],
+   )
+paired_merged_raw_encodings_editing_freqs.presort_pop_encoding_editing_per_variant_freq_avg[0].to_csv('presort_editing_freqs_avg_editor.csv')
+paired_merged_raw_encodings_editing_freqs.baseline_pop_encoding_editing_per_variant_freq_avg[0].to_csv('baseline_editing_freqs_avg_editor.csv')
+paired_merged_raw_encodings_editing_freqs.enriched_pop_encoding_editing_per_variant_freq_avg[0].to_csv('target_editing_freqs_avg_editor.csv')
+paired_merged_raw_encodings_editing_freqs.ctrl_pop_encoding_editing_per_variant_freq_avg[0].to_csv('wt_editing_freqs_avg_editor.csv')
+
+cmm.plot_millipede_boardplot(editorName (ABE8e or evoCDA), 'MillipedeOutput.csv', 'presort_editing_freqs_avg_editor.csv' , 'wt_editing_freqs_avg_editor.csv', start,end, AMPLICON, outputPath = "Boardplot.svg")
+
+```
+<img width="668" alt="Screenshot 2024-10-09 at 2 37 18 PM" src="https://github.com/user-attachments/assets/a698298c-3d54-49b6-b94b-cdf3c6d329e4">
+
+### STEP 5: PyDESeq2 based analysis
+The encoded representation of the alleles can also be fed into PyDESeq2, to calculate the differential distribution of each allele across the sorted populations. For documentation on PyDESeq2, see [here](https://pydeseq2.readthedocs.io/en/latest/index.html#).
+
+PyDESeq2 takes in a count and design matrix, along with several parameters:
+
+```
+inference = DefaultInference(n_cpus=8)
+dds = DeseqDataSet(
+    counts=count_df,
+    metadata=metadata_df,
+    design_factors="condition",
+    refit_cooks=True,
+    inference=inference,
+    # n_cpus=8, # n_cpus can be specified here or in the inference object
+)
+```
+**See [notebooks/STEP5_ABE8e_DESeq2_Demo.ipynb](https://github.com/pinellolab/CRISPR-millipede-target/blob/master/notebooks/STEP5_ABE8e_DESeq2_Demo.ipynb) for instructions on how to format the input matrices and run PyDESeq2.**
+
+After running pyDESeq2, we can visualize a volcano plot of the per-allele scores derived through the model:
+
+```
+def contains_edit_special(edit, edit2):
+    colors = []
+    sizes = []
+    
+    subset_df = results_df.copy()
+    
+    for index, row in subset_df.iterrows():
+        if len(set(edit).intersection(set(index.split(",")))) > 0:
+            colors.append("#00AEEF")
+            sizes.append(40)
+        elif len(set(edit2).intersection(set(index.split(",")))) > 0:
+            colors.append("#EC008C")
+            sizes.append(40)
+        else:
+            colors.append("gray")
+            sizes.append(40)
+            subset_df.drop(index, inplace=True)
+    
+    # Create the plot
+    plt.figure(figsize=(8, 5))
+    
+    # Scatter plot
+    plt.scatter(results_df['log2FoldChange'] * -1, 
+                results_df['-10 * log(pvalue)'],
+                c=colors, s=sizes, alpha=0.3)
+    
+    # Set x-axis to log2 scale
+    plt.xscale('symlog', base=2)
+    
+    # Set axis labels and title
+    plt.xlabel("Log2 Fold Change [CD19+ vs CD19-]", fontsize=14)
+    plt.ylabel("-10 * log10(pvalue)", fontsize=14)
+    plt.title("Volcano Plot", fontsize=16)
+    
+    # Set x-axis limits and ticks
+    plt.xlim(-10, 10)
+    
+    # Set y-axis limits
+    plt.ylim(0, 30)
+    ax = plt.gca()  # Get current axis
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+
+    # Save the figure
+    plt.savefig("ABE8e_allelic_analysis_w_MillipedeHits.svg")
+
+    # Adjust layout and display the plot
+    plt.tight_layout()
+    plt.show()
+    
+    # Display the subset dataframe
+    display(subset_df)
+```
+
+The parameters "edit1" and "edit2" can be used to selectively color alleles that exhibit certain sets of edits:
+
+```
+contains_edit_special(["223A>G", "230A>G"], ["151A>G"])
+```
+
+![image](https://github.com/user-attachments/assets/32c9451a-bf65-45f4-bf2c-87317ef920fa)

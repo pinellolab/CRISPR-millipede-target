@@ -1,7 +1,7 @@
 from collections import defaultdict
 import pandas as pd
 from typing import List
-from .models_processing import MillipedeInputDataExperimentalGroup
+from ..modelling.models_processing import MillipedeInputDataExperimentalGroup
 
 def allelic_analysis(experiments_inputdata: MillipedeInputDataExperimentalGroup, rep:int, start:int, end: int, ref_nt: str, alt_nt: str):
     #setup dataframe

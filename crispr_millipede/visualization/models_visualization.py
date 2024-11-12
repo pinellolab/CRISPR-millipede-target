@@ -5,8 +5,8 @@ from typing_extensions import TypeGuard
 from matplotlib.backends.backend_pdf import PdfPages
 from matplotlib.colors import LinearSegmentedColormap
 
-from .models_processing import *
-from .models_inputs import *
+from ..modelling.models_processing import *
+from ..modelling.models_inputs import *
 from typing import Optional
 
 # It seems the best way is an interactive web app for this data - start thinking about how this can be coded in plotly.

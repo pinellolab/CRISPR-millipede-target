@@ -739,9 +739,9 @@ class MillipedeInputDataExperimentalGroup:
                     rep_index = rep_indices[intercept_index]
                     
                     # Get the corresponding sigma scale parameter based on the exp/rep index
-                    K_enriched_selected = retrieve_sample_parameter(K_enriched)
-                    K_baseline_selected = retrieve_sample_parameter(K_baseline)
-                    a_parameter_selected = retrieve_sample_parameter(a_parameter)
+                    K_enriched_selected = retrieve_sample_parameter(K_enriched, experiment_index=exp_index, replicate_index=rep_index)
+                    K_baseline_selected = retrieve_sample_parameter(K_baseline, experiment_index=exp_index, replicate_index=rep_index)
+                    a_parameter_selected = retrieve_sample_parameter(a_parameter, experiment_index=exp_index, replicate_index=rep_index)
 
                     # Subset the encoding by the intercept index and add scale factor
                     sample_encoding_df = encoding_df[encoding_df[intercept_col] == 1]

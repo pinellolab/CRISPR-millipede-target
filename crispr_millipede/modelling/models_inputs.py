@@ -168,7 +168,12 @@ class MillipedeDesignMatrixProcessingSpecification:
     offset_psuedocount: int = 0
     
     def __hash__(self):
-        return hash((self.wt_normalization, self.total_normalization, self.sigma_scale_normalized, self.decay_sigma_scale, self.K_enriched, self.K_baseline, self.a_parameter, self.set_offset_as_default, self.set_offset_as_total_reads, self.set_offset_as_enriched, self.set_offset_as_baseline, self.set_offset_as_presort, self.offset_normalized, self.offset_psuedocount))
+        def make_hashable(item):
+            if isinstance(item, list):
+                # Recursively convert nested lists to tuples
+                return tuple(make_hashable(sub_item) for sub_item in item)
+            return item
+        return hash((self.wt_normalization, self.total_normalization, self.sigma_scale_normalized, self.decay_sigma_scale, make_hashable(self.K_enriched), make_hashable(self.K_baseline), make_hashable(self.a_parameter), self.set_offset_as_default, self.set_offset_as_total_reads, self.set_offset_as_enriched, self.set_offset_as_baseline, self.set_offset_as_presort, self.offset_normalized, self.offset_psuedocount))
     
     def __str__(self):
         return f"wt_normalization={self.wt_normalization};total_normalization={self.total_normalization};sigma_scale_normalized={self.sigma_scale_normalized};decay_sigma_scale={self.decay_sigma_scale};K_enriched={self.K_enriched};K_baseline={self.K_baseline};a_parameter={self.a_parameter}; set_offset_as_default={self.set_offset_as_default}, set_offset_as_total_reads={self.set_offset_as_total_reads}, set_offset_as_enriched={self.set_offset_as_enriched}, set_offset_as_baseline={self.set_offset_as_baseline}, set_offset_as_presort={self.set_offset_as_presort}, offset_normalized={self.offset_normalized}, offset_psuedocount={self.offset_psuedocount}"

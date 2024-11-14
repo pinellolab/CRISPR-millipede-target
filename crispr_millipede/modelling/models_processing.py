@@ -676,18 +676,18 @@ class MillipedeInputDataExperimentalGroup:
             for col in intercept_columns:
                 rep_index = col.find("rep")
                 if rep_index != -1:
-                    intercept_rep_i = col[(rep_index + len("rep")):]
+                    intercept_rep_i = int(col[(rep_index + len("rep")):])
                     rep_indices.append(intercept_rep_i)
                     exp_index = col.find("exp")
                     if exp_index != -1:
-                        intercept_exp_i = col[(exp_index + len("exp")):rep_index-1]
+                        intercept_exp_i = int(col[(exp_index + len("exp")):rep_index-1])
                         exp_indices.append(intercept_exp_i)
                     else:
                         raise Exception(f"No exp found in intercept column {col}. This is a developer bug, contact developers (see the cripsr-millipeede GitHub page for contact)")
                 else:
                     exp_index = col.find("exp")
                     if exp_index != -1:
-                        intercept_exp_i = col[(exp_index + len("exp")):]
+                        intercept_exp_i = int(col[(exp_index + len("exp")):])
                         exp_indices.append(intercept_exp_i)
                         rep_indices.append(replicate_i) # Add the explit replicate ID if only the experiment ID was found in the intercept column
         

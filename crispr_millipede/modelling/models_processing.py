@@ -26,9 +26,9 @@ def decay_function(x, k, a, epsilon=0.01):
     b = -np.log(epsilon) / a
     return 1 + (k - 1) * np.exp(-b * x)
 
-# TODO 20221019: Include presort in the filtering, so therefore must also take presort fn as input
-@dataclass
-class MillipedeInputDataExperimentalGroup:
+
+@dataclass 
+class MillipedeInputDataLoader:
     data_directory: str
     enriched_pop_fn_experiment_list: List[str]
     enriched_pop_df_reads_colname: str
@@ -36,15 +36,14 @@ class MillipedeInputDataExperimentalGroup:
     baseline_pop_df_reads_colname: str
     experiment_labels: List[str]
     reps: List[int]
-    millipede_model_specification_set: Mapping[str, MillipedeModelSpecification]
     presort_pop_fn_experiment_list: Optional[List[str]] = None
     presort_pop_df_reads_colname: Optional[str] = None
+    unprocessed_merged_experiment_df_list: Optional[List[List[pd.DataFrame]]] = None
 
     """
-        Generates the MillipedeInputData objects provided MillipedeModelSpecifications and other relevant parameters such as filepaths to the data tables, read thresholds, and labels.
+        Generates the MillipedeInputData
     """
     def __post_init__(self):
-                 
         '''
             Input validation
         '''
@@ -64,18 +63,194 @@ class MillipedeInputDataExperimentalGroup:
             assert len(self.experiment_labels) == len(self.presort_pop_fn_experiment_list), "Length of enriched_pop_fn_experiment_list, baseline_pop_fn_experiment_list, and experiment_labels must be same length"
 
         print("Passed validation.")
+    
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            
+            #
+            # Process the replicate dataframes:
+            # type List[pd.DataFrame] if relicates are combined
+            # type List[List[pd.DataFrame]] if replicates are separate
+            #
+            unprocessed_merged_experiment_df_list: List[List[pd.DataFrame]] = []
+            # Iterate through the experiments
+            for experiment_index in range(len(self.enriched_pop_fn_experiment_list)):
+                # Get the enriched_population and baseline_population for the experiment
+                enriched_pop_exp_fn = self.enriched_pop_fn_experiment_list[experiment_index]
+                baseline_pop_exp_fn = self.baseline_pop_fn_experiment_list[experiment_index]
+                
+                presort_pop_exp_fn = None
+                if self.presort_pop_fn_experiment_list is not None:
+                    presort_pop_exp_fn = self.presort_pop_fn_experiment_list[experiment_index]
+            
+                # Iterate through each replicate of the experiment
+                # type List[pd.DataFrame] if relicates are combined
+                # type List[List[pd.DataFrame]] if replicates are separate
+                unprocessed_exp_merged_rep_df_list: List[pd.DataFrame] = []
+                for rep in self.reps:
+                    '''
+                        Check file directories
+                    '''
+                    enriched_pop_full_fn_exp_rep = (self.data_directory + '/' + enriched_pop_exp_fn).format(rep)
+                    baseline_pop_full_fn_exp_rep = (self.data_directory + '/' + baseline_pop_exp_fn).format(rep)
+                    
+                    presort_pop_full_fn_exp_rep = None
+                    if presort_pop_exp_fn is not None:
+                        presort_pop_full_fn_exp_rep = (self.data_directory + '/' + presort_pop_exp_fn).format(rep)
+                        assert exists(presort_pop_full_fn_exp_rep), "File not found: {}".format(presort_pop_full_fn_exp_rep)
+
+                    assert exists(enriched_pop_full_fn_exp_rep), "File not found: {}".format(enriched_pop_full_fn_exp_rep)
+                    assert exists(baseline_pop_full_fn_exp_rep), "File not found: {}".format(baseline_pop_full_fn_exp_rep)
+
+                    '''
+                        Read in dataframes
+                    '''
+                    enriched_pop_exp_rep_df = pd.read_csv(enriched_pop_full_fn_exp_rep, sep='\t').fillna(value=0.0)
+                    enriched_pop_nt_columns = [col for col in enriched_pop_exp_rep_df.columns if ">" in col]
+                    enriched_pop_exp_rep_df = enriched_pop_exp_rep_df[enriched_pop_nt_columns + [self.enriched_pop_df_reads_colname]]
+
+
+                    baseline_pop_exp_rep_df = pd.read_csv(baseline_pop_full_fn_exp_rep, sep='\t').fillna(value=0.0)
+                    baseline_pop_nt_columns = [col for col in baseline_pop_exp_rep_df.columns if ">" in col]
+                    baseline_pop_exp_rep_df = baseline_pop_exp_rep_df[baseline_pop_nt_columns + [self.baseline_pop_df_reads_colname]]
+
+                    assert set(enriched_pop_nt_columns) == set(baseline_pop_nt_columns), "Nucleotide columns between enriched and baseline dataframes must be equivalent - are these screening the same regions?"
+                    
+                    presort_pop_exp_rep_df = None
+                    if presort_pop_full_fn_exp_rep is not None:
+                        presort_pop_exp_rep_df = pd.read_csv(presort_pop_full_fn_exp_rep, sep='\t').fillna(value=0.0)
+                        presort_pop_nt_columns = [col for col in presort_pop_exp_rep_df.columns if ">" in col]
+                        presort_pop_exp_rep_df = presort_pop_exp_rep_df[presort_pop_nt_columns + [self.presort_pop_df_reads_colname]]
+                        assert set(enriched_pop_nt_columns) == set(presort_pop_nt_columns), "Nucleotide columns between presort and the  enriched/baseline dataframes must be equivalent - are these screening the same regions?"
+
+
+                    
+                    nucleotide_ids = enriched_pop_nt_columns
+
+                    # Concat the enriched and baseline population dataframes together
+                    if presort_pop_full_fn_exp_rep is not None:
+                        unprocessed_merged_exp_rep_df: pd.DataFrame = pd.concat([enriched_pop_exp_rep_df, baseline_pop_exp_rep_df, presort_pop_exp_rep_df]).groupby(nucleotide_ids, as_index=False).sum()
+                    else:
+                        unprocessed_merged_exp_rep_df: pd.DataFrame = pd.concat([enriched_pop_exp_rep_df, baseline_pop_exp_rep_df]).groupby(nucleotide_ids, as_index=False).sum()
+
+                    unprocessed_exp_merged_rep_df_list.append(unprocessed_merged_exp_rep_df)
+                unprocessed_merged_experiment_df_list.append(unprocessed_exp_merged_rep_df_list)
+                self.unprocessed_merged_experiment_df_list = unprocessed_merged_experiment_df_list
+
+    def plot_replicate_correlation(self) -> List[pd.DataFrame]:
+        merged_df_experiment_list: List[pd.DataFrame] = []
+        unprocessed_merged_experiment_df_list = self.unprocessed_merged_experiment_df_list
+        for experiment_i, unprocessed_exp_merged_rep_df_list in enumerate(unprocessed_merged_experiment_df_list):
+            print(f"Experiment {experiment_i}")
+            merged_df = unprocessed_exp_merged_rep_df_list[0]
+            merge_column_names = [col for col in merged_df.columns if ">" in col]
+            
+            # Add rep0 suffix
+            def add_suffix(df, rep):
+                return df.rename(
+                    columns={col: f"{col}_rep{rep}" for col in df.columns if col not in merge_column_names}
+                )
+                
+            merged_df = add_suffix(merged_df, 0)
+            
+            # Loop through the list of DataFrames and merge iteratively
+            for replicate_i, unprocessed_merged_exp_rep_df in enumerate(unprocessed_exp_merged_rep_df_list[1:], start=1):
+                unprocessed_merged_exp_rep_df = add_suffix(unprocessed_merged_exp_rep_df, replicate_i)
+                print(f"Merging replicate {replicate_i}")
+                merged_df = merged_df.merge(
+                    unprocessed_merged_exp_rep_df,
+                    on=merge_column_names,
+                    how="outer"
+                )
+            merged_df = merged_df.fillna(0)
+
+
+            num_pairwise_reps = len(self.reps)**2
+            fig, axes = plt.subplots(num_pairwise_reps,2, figsize=(12, num_pairwise_reps*6))
+            axes_row_i = 0
+            for rep_i in self.reps:
+                for rep_j in self.reps:
+                    enriched_rep_i_colname = self.enriched_pop_df_reads_colname + f"_rep{rep_i}"
+                    enriched_rep_j_colname = self.enriched_pop_df_reads_colname + f"_rep{rep_j}"
+                    baseline_rep_i_colname = self.baseline_pop_df_reads_colname + f"_rep{rep_i}"
+                    baseline_rep_j_colname = self.baseline_pop_df_reads_colname + f"_rep{rep_j}"
+                    
+                    axes[axes_row_i, 0].scatter(np.log2(merged_df[enriched_rep_i_colname]), np.log2(merged_df[enriched_rep_j_colname]), alpha=0.1)
+                    axes[axes_row_i, 0].set_xlabel(f"Log2({enriched_rep_i_colname})")
+                    axes[axes_row_i, 0].set_ylabel(f"Log2({enriched_rep_j_colname})")
+                    axes[axes_row_i, 0].set_title(f"Enriched: Rep {rep_i} vs. Rep {rep_j}")
+                    
+                    axes[axes_row_i, 1].scatter(np.log2(merged_df[baseline_rep_i_colname]), np.log2(merged_df[baseline_rep_j_colname]), alpha=0.1)
+                    axes[axes_row_i, 1].set_xlabel(f"Log2({baseline_rep_i_colname})")
+                    axes[axes_row_i, 1].set_ylabel(f"Log2({baseline_rep_j_colname})")
+                    axes[axes_row_i, 1].set_title(f"Baseline: Rep {rep_i} vs. Rep {rep_j}")
+                    axes_row_i = axes_row_i + 1
+            plt.show()
+
+            merged_df_experiment_list.append(merged_df)
+        return merged_df_experiment_list
+        
+    def plot_binned_reads_by_score_variance(self, ymax = 500, bin_width = 10, figsize_width = 12, figsize_height = 10) -> List[List[pd.DataFrame]]:
+        unprocessed_merged_experiment_df_list_copy=[]
+        for experiment_i, unprocessed_exp_merged_rep_df_list in enumerate(self.unprocessed_merged_experiment_df_list):
+            unprocessed_exp_merged_rep_df_list_copy = []
+            for replicate_i, unprocessed_merged_exp_rep_df in enumerate(unprocessed_exp_merged_rep_df_list):
+                unprocessed_merged_exp_rep_df_copy = unprocessed_merged_exp_rep_df.copy()
+                enriched_read_counts = unprocessed_merged_exp_rep_df_copy[self.enriched_pop_df_reads_colname]
+                baseline_read_counts = unprocessed_merged_exp_rep_df_copy[self.baseline_pop_df_reads_colname]
+                unprocessed_merged_exp_rep_df_copy["score"] = (enriched_read_counts - baseline_read_counts) / (enriched_read_counts + baseline_read_counts) 
+                bins = np.arange(0, ymax, bin_width)  # Create bins from 0 to 0.005 with the specified width
+
+                unprocessed_merged_exp_rep_df_copy['enriched_bins'] = pd.cut(enriched_read_counts, bins)
+                unprocessed_merged_exp_rep_df_copy['baseline_bins'] = pd.cut(baseline_read_counts, bins)
+
+                # Compute variance for each bin
+                enriched_variance_per_bin = unprocessed_merged_exp_rep_df_copy.groupby('enriched_bins')['score'].var().reset_index()
+                baseline_variance_per_bin = unprocessed_merged_exp_rep_df_copy.groupby('baseline_bins')['score'].var().reset_index()
+
+                # Plotting
+                fig, axes = plt.subplots(2,1, figsize=(figsize_width, figsize_height))
+                plt.subplots_adjust(hspace=0.4)
+                axes[0].bar(enriched_variance_per_bin['enriched_bins'].astype(str), enriched_variance_per_bin['score'], width=0.8)
+                axes[0].set_xlabel(f'Bins of {self.enriched_pop_df_reads_colname}')
+                axes[0].set_ylabel('Variance of score')
+                axes[0].set_title(f'Variance of score across bins of {self.enriched_pop_df_reads_colname} for experiment {experiment_i} and replicate {replicate_i}', fontsize=12)
+                axes[0].set_xticklabels(axes[0].get_xticklabels(), rotation=45, ha='right', fontsize=6)
+
+                axes[1].bar(baseline_variance_per_bin['baseline_bins'].astype(str), baseline_variance_per_bin['score'], width=0.8)
+                axes[1].set_xlabel(f'Bins of {self.baseline_pop_df_reads_colname}')
+                axes[1].set_ylabel('Variance of score')
+                axes[1].set_title(f'Variance of score across bins of {self.baseline_pop_df_reads_colname} for experiment {experiment_i} and replicate {replicate_i}', fontsize=12)
+                axes[1].set_xticklabels(axes[1].get_xticklabels(), rotation=45, ha='right', fontsize=6)
+
+                plt.show()
+                
+                unprocessed_exp_merged_rep_df_list_copy.append(unprocessed_merged_exp_rep_df_copy)
+            unprocessed_merged_experiment_df_list_copy.append(unprocessed_exp_merged_rep_df_list_copy)
+        return unprocessed_merged_experiment_df_list_copy
+
+        
+# TODO 20221019: Include presort in the filtering, so therefore must also take presort fn as input
+@dataclass
+class MillipedeInputDataExperimentalGroup:
+    millipede_model_specification_set: Mapping[str, MillipedeModelSpecification]
+    millipede_input_data_loader: MillipedeInputDataLoader
+
+    """
+        Generates the MillipedeInputData objects provided MillipedeModelSpecifications and other relevant parameters such as filepaths to the data tables, read thresholds, and labels.
+    """
+    def __post_init__(self):
+                 
+        '''
+            Input validation
+        '''
+        assert self.millipede_input_data_loader.unprocessed_merged_experiment_df_list is not None, "millipede_input_data_loader.unprocessed_merged_experiment_df_list is None, make sure that you load data using MillipedeInputDataLoader class"
+        print("Passed validation.")
         
         
         __get_data_partial = partial(
             self.__get_data,
-            data_directory=self.data_directory, 
-            enriched_pop_fn_experiment_list=self.enriched_pop_fn_experiment_list, 
-            enriched_pop_df_reads_colname=self.enriched_pop_df_reads_colname, 
-            baseline_pop_fn_experiment_list=self.baseline_pop_fn_experiment_list, 
-            baseline_pop_df_reads_colname=self.baseline_pop_df_reads_colname, 
-            presort_pop_fn_experiment_list=self.presort_pop_fn_experiment_list, 
-            presort_pop_df_reads_colname=self.presort_pop_df_reads_colname, 
-            reps=self.reps
+            millipede_input_data_loader=self.millipede_input_data_loader, 
         )
         # This will be the variable containing the final dictionary with input design matrix for all specifications
         millipede_model_specification_set_with_data: Mapping[str, Tuple[MillipedeModelSpecification, MillipedeInputData]] = dict()
@@ -108,14 +283,7 @@ class MillipedeInputDataExperimentalGroup:
     Function to process the encoding dataframe (from encode pipeline script) and create design matrix for milliped
     """
     def __get_data(self, 
-                   data_directory: str, 
-                   enriched_pop_fn_experiment_list: List[str], 
-                   enriched_pop_df_reads_colname: str, 
-                   baseline_pop_fn_experiment_list: List[str], 
-                   baseline_pop_df_reads_colname: str, 
-                   presort_pop_fn_experiment_list: Optional[List[str]], 
-                   presort_pop_df_reads_colname: Optional[str], 
-                   reps: List[int], 
+                   millipede_input_data_loader: MillipedeInputDataLoader, 
                    replicate_merge_strategy:MillipedeReplicateMergeStrategy, 
                    experiment_merge_strategy:MillipedeExperimentMergeStrategy,
                    cutoff_specification: MillipedeCutoffSpecification,
@@ -137,73 +305,20 @@ class MillipedeInputDataExperimentalGroup:
             # type List[pd.DataFrame] if relicates are combined
             # type List[List[pd.DataFrame]] if replicates are separate
             #
-            merged_experiment_df_list: Union[List[pd.DataFrame], List[List[pd.DataFrame]]] = []
+            merged_experiment_df_list: List[List[pd.DataFrame]] = []
             # Iterate through the experiments
-            for experiment_index in range(len(enriched_pop_fn_experiment_list)):
-                # Get the enriched_population and baseline_population for the experiment
-                enriched_pop_exp_fn = enriched_pop_fn_experiment_list[experiment_index]
-                baseline_pop_exp_fn = baseline_pop_fn_experiment_list[experiment_index]
-                
-                presort_pop_exp_fn = None
-                if presort_pop_fn_experiment_list is not None:
-                    presort_pop_exp_fn = presort_pop_fn_experiment_list[experiment_index]
-            
-                # Iterate through each replicate of the experiment
-                # type List[pd.DataFrame] if relicates are combined
-                # type List[List[pd.DataFrame]] if replicates are separate
+            for experiment_index, unprocessed_exp_merged_rep_df_list in enumerate(millipede_input_data_loader.unprocessed_merged_experiment_df_list):
                 exp_merged_rep_df_list: List[pd.DataFrame] = []
-                for rep in reps:
-                    '''
-                        Check file directories
-                    '''
-                    enriched_pop_full_fn_exp_rep = (data_directory + '/' + enriched_pop_exp_fn).format(rep)
-                    baseline_pop_full_fn_exp_rep = (data_directory + '/' + baseline_pop_exp_fn).format(rep)
-                    
-                    presort_pop_full_fn_exp_rep = None
-                    if presort_pop_exp_fn is not None:
-                        presort_pop_full_fn_exp_rep = (data_directory + '/' + presort_pop_exp_fn).format(rep)
-                        assert exists(presort_pop_full_fn_exp_rep), "File not found: {}".format(presort_pop_full_fn_exp_rep)
-
-                    assert exists(enriched_pop_full_fn_exp_rep), "File not found: {}".format(enriched_pop_full_fn_exp_rep)
-                    assert exists(baseline_pop_full_fn_exp_rep), "File not found: {}".format(baseline_pop_full_fn_exp_rep)
-
-                    '''
-                        Read in dataframes
-                    '''
-                    enriched_pop_exp_rep_df = pd.read_csv(enriched_pop_full_fn_exp_rep, sep='\t').fillna(value=0.0)
-                    enriched_pop_nt_columns = [col for col in enriched_pop_exp_rep_df.columns if ">" in col]
-                    enriched_pop_exp_rep_df = enriched_pop_exp_rep_df[enriched_pop_nt_columns + [enriched_pop_df_reads_colname]]
-
-
-                    baseline_pop_exp_rep_df = pd.read_csv(baseline_pop_full_fn_exp_rep, sep='\t').fillna(value=0.0)
-                    baseline_pop_nt_columns = [col for col in baseline_pop_exp_rep_df.columns if ">" in col]
-                    baseline_pop_exp_rep_df = baseline_pop_exp_rep_df[baseline_pop_nt_columns + [baseline_pop_df_reads_colname]]
-
-                    assert set(enriched_pop_nt_columns) == set(baseline_pop_nt_columns), "Nucleotide columns between enriched and baseline dataframes must be equivalent - are these screening the same regions?"
-                    
-                    presort_pop_exp_rep_df = None
-                    if presort_pop_full_fn_exp_rep is not None:
-                        presort_pop_exp_rep_df = pd.read_csv(presort_pop_full_fn_exp_rep, sep='\t').fillna(value=0.0)
-                        presort_pop_nt_columns = [col for col in presort_pop_exp_rep_df.columns if ">" in col]
-                        presort_pop_exp_rep_df = presort_pop_exp_rep_df[presort_pop_nt_columns + [presort_pop_df_reads_colname]]
-                        assert set(enriched_pop_nt_columns) == set(presort_pop_nt_columns), "Nucleotide columns between presort and the  enriched/baseline dataframes must be equivalent - are these screening the same regions?"
-
-
-                    
-                    nucleotide_ids = enriched_pop_nt_columns
-
-                    # Concat the enriched and baseline population dataframes together
-                    if presort_pop_full_fn_exp_rep is not None:
-                        merged_exp_rep_df: pd.DataFrame = pd.concat([enriched_pop_exp_rep_df, baseline_pop_exp_rep_df, presort_pop_exp_rep_df]).groupby(nucleotide_ids, as_index=False).sum()
-                    else:
-                        merged_exp_rep_df: pd.DataFrame = pd.concat([enriched_pop_exp_rep_df, baseline_pop_exp_rep_df]).groupby(nucleotide_ids, as_index=False).sum()
-
+                for _, unprocessed_merged_exp_rep_df in enumerate(unprocessed_exp_merged_rep_df_list):
                     # filter based on the per_replicate_each_condition_num_cutoff
-                    merged_exp_rep_df = merged_exp_rep_df[merged_exp_rep_df[baseline_pop_df_reads_colname] >= cutoff_specification.per_replicate_each_condition_num_cutoff]
-                    merged_exp_rep_df = merged_exp_rep_df[merged_exp_rep_df[enriched_pop_df_reads_colname] >= cutoff_specification.per_replicate_each_condition_num_cutoff]
-                    if presort_pop_full_fn_exp_rep is not None:
-                        merged_exp_rep_df = merged_exp_rep_df[merged_exp_rep_df[presort_pop_df_reads_colname] >= cutoff_specification.per_replicate_presort_condition_num_cutoff]
-                    merged_exp_rep_df['total_reads'] = merged_exp_rep_df[baseline_pop_df_reads_colname] + merged_exp_rep_df[enriched_pop_df_reads_colname]
+                    merged_exp_rep_df = unprocessed_merged_exp_rep_df.copy()
+                    nucleotide_ids = [col for col in merged_exp_rep_df.columns if ">" in col]
+
+                    merged_exp_rep_df = merged_exp_rep_df[merged_exp_rep_df[millipede_input_data_loader.baseline_pop_df_reads_colname] >= cutoff_specification.per_replicate_each_condition_num_cutoff]
+                    merged_exp_rep_df = merged_exp_rep_df[merged_exp_rep_df[millipede_input_data_loader.enriched_pop_df_reads_colname] >= cutoff_specification.per_replicate_each_condition_num_cutoff]
+                    if millipede_input_data_loader.presort_pop_fn_experiment_list is not None:
+                        merged_exp_rep_df = merged_exp_rep_df[merged_exp_rep_df[millipede_input_data_loader.presort_pop_df_reads_colname] >= cutoff_specification.per_replicate_presort_condition_num_cutoff]
+                    merged_exp_rep_df['total_reads'] = merged_exp_rep_df[millipede_input_data_loader.baseline_pop_df_reads_colname] + merged_exp_rep_df[millipede_input_data_loader.enriched_pop_df_reads_colname]
 
                     # filter on total reads based on the per_replicate_all_condition_num_cutoff
                     total_alleles_pre_filter = merged_exp_rep_df.values.shape[0]
@@ -229,13 +344,13 @@ class MillipedeInputDataExperimentalGroup:
                 per_condition_reads_filter = lambda reads_colname, reads_num_cutoff, acceptable_rep_count, df: sum(df[reads_colname] >= reads_num_cutoff) >= acceptable_rep_count 
                 if (cutoff_specification.baseline_pop_per_condition_each_replicate_num_cutoff > 0) and (cutoff_specification.baseline_pop_per_condition_acceptable_rep_count > 0):
                     print(f"Running baseline per-condition filtering with num_cutoff={cutoff_specification.baseline_pop_per_condition_each_replicate_num_cutoff} and acceptable_rep_count={cutoff_specification.baseline_pop_per_condition_acceptable_rep_count}")
-                    merged_exp_reps_df = merged_exp_reps_df.groupby(nucleotide_ids, as_index=False).filter(partial(per_condition_reads_filter(baseline_pop_df_reads_colname, cutoff_specification.baseline_pop_per_condition_each_replicate_num_cutoff, cutoff_specification.baseline_pop_per_condition_acceptable_rep_count)))
+                    merged_exp_reps_df = merged_exp_reps_df.groupby(nucleotide_ids, as_index=False).filter(partial(per_condition_reads_filter(millipede_input_data_loader.baseline_pop_df_reads_colname, cutoff_specification.baseline_pop_per_condition_each_replicate_num_cutoff, cutoff_specification.baseline_pop_per_condition_acceptable_rep_count)))
                 if (cutoff_specification.enriched_pop_per_condition_each_replicate_num_cutoff > 0) and (cutoff_specification.enriched_pop_per_condition_acceptable_rep_count > 0):
                     print(f"Running enriched per-condition filtering with num_cutoff={cutoff_specification.enriched_pop_per_condition_each_replicate_num_cutoff} and acceptable_rep_count={cutoff_specification.enriched_pop_per_condition_acceptable_rep_count}")
-                    merged_exp_reps_df = merged_exp_reps_df.groupby(nucleotide_ids, as_index=False).filter(partial(per_condition_reads_filter(enriched_pop_df_reads_colname, cutoff_specification.enriched_pop_per_condition_each_replicate_num_cutoff, cutoff_specification.enriched_pop_per_condition_acceptable_rep_count)))
+                    merged_exp_reps_df = merged_exp_reps_df.groupby(nucleotide_ids, as_index=False).filter(partial(per_condition_reads_filter(millipede_input_data_loader.enriched_pop_df_reads_colname, cutoff_specification.enriched_pop_per_condition_each_replicate_num_cutoff, cutoff_specification.enriched_pop_per_condition_acceptable_rep_count)))
                 if (cutoff_specification.presort_pop_per_condition_each_replicate_num_cutoff > 0) and (cutoff_specification.presort_pop_per_condition_acceptable_rep_count > 0):
                     print(f"Running enriched per-condition filtering with num_cutoff={cutoff_specification.presort_pop_per_condition_each_replicate_num_cutoff} and acceptable_rep_count={cutoff_specification.presort_pop_per_condition_acceptable_rep_count}")
-                    merged_exp_reps_df = merged_exp_reps_df.groupby(nucleotide_ids, as_index=False).filter(partial(per_condition_reads_filter(presort_pop_df_reads_colname, cutoff_specification.presort_pop_per_condition_each_replicate_num_cutoff, cutoff_specification.presort_pop_per_condition_acceptable_rep_count)))
+                    merged_exp_reps_df = merged_exp_reps_df.groupby(nucleotide_ids, as_index=False).filter(partial(per_condition_reads_filter(millipede_input_data_loader.presort_pop_df_reads_colname, cutoff_specification.presort_pop_per_condition_each_replicate_num_cutoff, cutoff_specification.presort_pop_per_condition_acceptable_rep_count)))
 
 
                 # All-condition filtering
@@ -243,7 +358,7 @@ class MillipedeInputDataExperimentalGroup:
                     print(f"Running all-condition filtering with enriched_num_cutoff={cutoff_specification.enriched_pop_all_condition_each_replicate_num_cutoff}, enriched_acceptable_rep_count={cutoff_specification.enriched_pop_all_condition_acceptable_rep_count}, baseline_num_cutoff={cutoff_specification.baseline_pop_all_condition_each_replicate_num_cutoff}, baseline_acceptable_rep_count={cutoff_specification.baseline_pop_all_condition_acceptable_rep_count}, presort_num_cutoff={cutoff_specification.presort_pop_all_condition_each_replicate_num_cutoff}, presort_acceptable_rep_count={cutoff_specification.presort_pop_all_condition_acceptable_rep_count}")
 
                     def all_condition_filter_func(df: pd.DataFrame):
-                        return per_condition_reads_filter(baseline_pop_df_reads_colname, cutoff_specification.baseline_pop_all_condition_each_replicate_num_cutoff, cutoff_specification.baseline_pop_all_condition_acceptable_rep_count, df) | per_condition_reads_filter(enriched_pop_df_reads_colname, cutoff_specification.enriched_pop_all_condition_each_replicate_num_cutoff, cutoff_specification.enriched_pop_all_condition_acceptable_rep_count, df) | per_condition_reads_filter(presort_pop_df_reads_colname, cutoff_specification.presort_pop_all_condition_each_replicate_num_cutoff, cutoff_specification.presort_pop_all_condition_acceptable_rep_count, df)
+                        return per_condition_reads_filter(millipede_input_data_loader.baseline_pop_df_reads_colname, cutoff_specification.baseline_pop_all_condition_each_replicate_num_cutoff, cutoff_specification.baseline_pop_all_condition_acceptable_rep_count, df) | per_condition_reads_filter(millipede_input_data_loader.enriched_pop_df_reads_colname, cutoff_specification.enriched_pop_all_condition_each_replicate_num_cutoff, cutoff_specification.enriched_pop_all_condition_acceptable_rep_count, df) | per_condition_reads_filter(millipede_input_data_loader.presort_pop_df_reads_colname, cutoff_specification.presort_pop_all_condition_each_replicate_num_cutoff, cutoff_specification.presort_pop_all_condition_acceptable_rep_count, df)
                     
                     merged_exp_reps_df = merged_exp_reps_df.groupby(nucleotide_ids, as_index=False).filter(all_condition_filter_func)
 
@@ -254,7 +369,7 @@ class MillipedeInputDataExperimentalGroup:
                     Perform normalization after filtering
                 '''
                 def normalize_func(merged_exp_rep_df):
-                    merged_exp_rep_normalized_df: pd.DataFrame = self.__normalize_counts(merged_exp_rep_df, enriched_pop_df_reads_colname, baseline_pop_df_reads_colname, nucleotide_ids, design_matrix_processing_specification.wt_normalization, design_matrix_processing_specification.total_normalization, presort_pop_df_reads_colname) 
+                    merged_exp_rep_normalized_df: pd.DataFrame = self.__normalize_counts(merged_exp_rep_df, millipede_input_data_loader.enriched_pop_df_reads_colname, millipede_input_data_loader.baseline_pop_df_reads_colname, nucleotide_ids, design_matrix_processing_specification.wt_normalization, design_matrix_processing_specification.total_normalization, millipede_input_data_loader.presort_pop_df_reads_colname) 
                     return merged_exp_rep_normalized_df
                 # TODO 20240808 Can implement normalization that requires all replicates "exp_merged_rep_df_list" ie size factors from Zain
                 exp_merged_rep_df_list = [normalize_func(merged_exp_rep_df) for merged_exp_rep_df in exp_merged_rep_df_list]
@@ -295,7 +410,7 @@ class MillipedeInputDataExperimentalGroup:
                     # Rename the dataframe to differentiate counts between reps
                     wt_allele_rep_df_renamed = []
                     for rep_i, df in enumerate(wt_allele_rep_df):
-                        df = df.rename(columns={enriched_pop_df_reads_colname: enriched_pop_df_reads_colname+"_rep{}".format(rep_i), baseline_pop_df_reads_colname: baseline_pop_df_reads_colname+"_rep{}".format(rep_i)})
+                        df = df.rename(columns={millipede_input_data_loader.enriched_pop_df_reads_colname: millipede_input_data_loader.enriched_pop_df_reads_colname+"_rep{}".format(rep_i), millipede_input_data_loader.baseline_pop_df_reads_colname: millipede_input_data_loader.baseline_pop_df_reads_colname+"_rep{}".format(rep_i)})
                         wt_allele_rep_df_renamed.append(df)
                     
                     # Group by allele
@@ -308,8 +423,8 @@ class MillipedeInputDataExperimentalGroup:
                     negative_guides = []
                     for index, (name, group) in enumerate(wt_allele_rep_df_renamed_merged):
                         group_noNaN = group.fillna(0)
-                        sample_population_raw_count_reps_observation = np.asarray([group_noNaN[enriched_pop_df_reads_colname+"_rep{}".format(rep_i)].sum() for rep_i in reps])
-                        control_population_raw_count_reps_observation = np.asarray([group_noNaN[baseline_pop_df_reads_colname+"_rep{}".format(rep_i)].sum() for rep_i in reps])
+                        sample_population_raw_count_reps_observation = np.asarray([group_noNaN[millipede_input_data_loader.enriched_pop_df_reads_colname+"_rep{}".format(rep_i)].sum() for rep_i in millipede_input_data_loader.reps])
+                        control_population_raw_count_reps_observation = np.asarray([group_noNaN[millipede_input_data_loader.baseline_pop_df_reads_colname+"_rep{}".format(rep_i)].sum() for rep_i in millipede_input_data_loader.reps])
                         # TODO: Later can add more info to guide, i.e. the allele. But setting the identifer as the df index is good and possibly sufficient.
                         guide = crispr_shrinkage.Guide(identifier="negative_{}".format(index), position=None, sample_population_raw_count_reps=sample_population_raw_count_reps_observation, control_population_raw_count_reps=control_population_raw_count_reps_observation, is_explanatory=True)
                         negative_guides.append(guide)
@@ -322,7 +437,7 @@ class MillipedeInputDataExperimentalGroup:
                     # Rename the dataframe to differentiate counts between reps
                     mut_allele_rep_df_renamed = []
                     for rep_i, df in enumerate(mut_allele_rep_df):
-                        df = df.rename(columns={enriched_pop_df_reads_colname: enriched_pop_df_reads_colname+"_rep{}".format(rep_i), baseline_pop_df_reads_colname: baseline_pop_df_reads_colname+"_rep{}".format(rep_i)})
+                        df = df.rename(columns={millipede_input_data_loader.enriched_pop_df_reads_colname: millipede_input_data_loader.enriched_pop_df_reads_colname+"_rep{}".format(rep_i), millipede_input_data_loader.baseline_pop_df_reads_colname: millipede_input_data_loader.baseline_pop_df_reads_colname+"_rep{}".format(rep_i)})
                         mut_allele_rep_df_renamed.append(df)
                     
                     # Group by allele
@@ -334,8 +449,8 @@ class MillipedeInputDataExperimentalGroup:
                     observation_guides = []
                     for index, (name, group) in enumerate(mut_allele_rep_df_renamed_merged):
                         group_noNaN = group.fillna(0)
-                        sample_population_raw_count_reps_observation = np.asarray([group_noNaN[enriched_pop_df_reads_colname+"_rep{}".format(rep_i)].sum() for rep_i in reps])
-                        control_population_raw_count_reps_observation = np.asarray([group_noNaN[baseline_pop_df_reads_colname+"_rep{}".format(rep_i)].sum() for rep_i in reps])
+                        sample_population_raw_count_reps_observation = np.asarray([group_noNaN[millipede_input_data_loader.enriched_pop_df_reads_colname+"_rep{}".format(rep_i)].sum() for rep_i in millipede_input_data_loader.reps])
+                        control_population_raw_count_reps_observation = np.asarray([group_noNaN[millipede_input_data_loader.baseline_pop_df_reads_colname+"_rep{}".format(rep_i)].sum() for rep_i in millipede_input_data_loader.reps])
                         # TODO: Later can add more info to guide, i.e. the allele. But setting the identifer as the df index is good and possibly sufficient.
                         guide = crispr_shrinkage.Guide(identifier="observation_{}".format(index), position=None, sample_population_raw_count_reps=sample_population_raw_count_reps_observation, control_population_raw_count_reps=control_population_raw_count_reps_observation, is_explanatory=True)
                         observation_guides.append(guide)
@@ -344,7 +459,7 @@ class MillipedeInputDataExperimentalGroup:
                         negative_control_guides = negative_guides,
                         positive_control_guides = [],
                         observation_guides = observation_guides,
-                        num_replicates = len(reps),
+                        num_replicates = len(millipede_input_data_loader.reps),
                         include_observational_guides_in_fit = shrinkage_input.include_observational_guides_in_fit,
                         include_positive_control_guides_in_fit = shrinkage_input.include_positive_control_guides_in_fit,
                         sample_population_scaling_factors = shrinkage_input.sample_population_scaling_factors_exp_list[experiment_index],
@@ -384,12 +499,12 @@ class MillipedeInputDataExperimentalGroup:
                     # This gets the WT allele from each replicate, as this will be used as the negative for CRISPR-Shrinkage
                     # Set negative counts
                     merged_rep_df_list_updated = []
-                    for rep_i in reps:
+                    for rep_i in millipede_input_data_loader.reps:
                         merged_exp_rep_df = exp_merged_rep_df_list[rep_i]
                         wt_allele_df = merged_exp_rep_df[merged_exp_rep_df[nucleotide_ids].sum(axis=1) == 0]
 
                         # Rename the dataframe to differentiate counts between reps
-                        wt_allele_df_renamed = wt_allele_df.rename(columns={enriched_pop_df_reads_colname: enriched_pop_df_reads_colname+"_rep{}".format(rep_i), baseline_pop_df_reads_colname: baseline_pop_df_reads_colname+"_rep{}".format(rep_i)})
+                        wt_allele_df_renamed = wt_allele_df.rename(columns={millipede_input_data_loader.enriched_pop_df_reads_colname: millipede_input_data_loader.enriched_pop_df_reads_colname+"_rep{}".format(rep_i), millipede_input_data_loader.baseline_pop_df_reads_colname: millipede_input_data_loader.baseline_pop_df_reads_colname+"_rep{}".format(rep_i)})
 
                         # Group by allele
                         nucleotide_ids = [col for col in wt_allele_df_renamed.columns if ">" in col]
@@ -401,8 +516,8 @@ class MillipedeInputDataExperimentalGroup:
                         negative_guides = []
                         for index, (name, group) in enumerate(wt_allele_df_renamed_merged):
                             group_noNaN = group.fillna(0)
-                            sample_population_raw_count_reps_observation = np.asarray([group_noNaN[enriched_pop_df_reads_colname+"_rep{}".format(rep_i)].sum()])
-                            control_population_raw_count_reps_observation = np.asarray([group_noNaN[baseline_pop_df_reads_colname+"_rep{}".format(rep_i)].sum()])
+                            sample_population_raw_count_reps_observation = np.asarray([group_noNaN[millipede_input_data_loader.enriched_pop_df_reads_colname+"_rep{}".format(rep_i)].sum()])
+                            control_population_raw_count_reps_observation = np.asarray([group_noNaN[millipede_input_data_loader.baseline_pop_df_reads_colname+"_rep{}".format(rep_i)].sum()])
                             # TODO: Later can add more info to guide, i.e. the allele. But setting the identifer as the df index is good and possibly sufficient.
                             guide = crispr_shrinkage.Guide(identifier="negative_{}".format(index), position=None, sample_population_raw_count_reps=sample_population_raw_count_reps_observation, control_population_raw_count_reps=control_population_raw_count_reps_observation, is_explanatory=True)
                             negative_guides.append(guide)
@@ -413,7 +528,7 @@ class MillipedeInputDataExperimentalGroup:
                         mut_allele_df = merged_exp_rep_df[merged_exp_rep_df[nucleotide_ids].sum(axis=1) > 0]
 
                         # Rename the dataframe to differentiate counts between reps
-                        mut_allele_df_renamed = df.rename(columns={enriched_pop_df_reads_colname: enriched_pop_df_reads_colname+"_rep{}".format(rep_i), baseline_pop_df_reads_colname: baseline_pop_df_reads_colname+"_rep{}".format(rep_i)})
+                        mut_allele_df_renamed = df.rename(columns={millipede_input_data_loader.enriched_pop_df_reads_colname: millipede_input_data_loader.enriched_pop_df_reads_colname+"_rep{}".format(rep_i), millipede_input_data_loader.baseline_pop_df_reads_colname: millipede_input_data_loader.baseline_pop_df_reads_colname+"_rep{}".format(rep_i)})
 
                         # Group by allele
                         nucleotide_ids = [col for col in mut_allele_df_renamed.columns if ">" in col]
@@ -424,8 +539,8 @@ class MillipedeInputDataExperimentalGroup:
                         observation_guides = []
                         for index, (name, group) in enumerate(mut_allele_df_renamed_merged):
                             group_noNaN = group.fillna(0)
-                            sample_population_raw_count_reps_observation = np.asarray([group_noNaN[enriched_pop_df_reads_colname+"_rep{}".format(rep_i)].sum()])
-                            control_population_raw_count_reps_observation = np.asarray([group_noNaN[baseline_pop_df_reads_colname+"_rep{}".format(rep_i)].sum()])
+                            sample_population_raw_count_reps_observation = np.asarray([group_noNaN[millipede_input_data_loader.enriched_pop_df_reads_colname+"_rep{}".format(rep_i)].sum()])
+                            control_population_raw_count_reps_observation = np.asarray([group_noNaN[millipede_input_data_loader.baseline_pop_df_reads_colname+"_rep{}".format(rep_i)].sum()])
                             # TODO: Later can add more info to guide, i.e. the allele. But setting the identifer as the df index is good and possibly sufficient.
                             guide = crispr_shrinkage.Guide(identifier="observation_{}".format(index), position=None, sample_population_raw_count_reps=sample_population_raw_count_reps_observation, control_population_raw_count_reps=control_population_raw_count_reps_observation, is_explanatory=True)
                             observation_guides.append(guide)
@@ -475,9 +590,9 @@ class MillipedeInputDataExperimentalGroup:
                 Handle all experiments depending on provided strategy
             '''
             __add_supporting_columns_partial = partial(self.__add_supporting_columns,
-                                                       enriched_pop_df_reads_colname=enriched_pop_df_reads_colname,                               
-                                                       baseline_pop_df_reads_colname= baseline_pop_df_reads_colname,
-                                                       presort_pop_df_reads_colname=presort_pop_df_reads_colname,
+                                                       enriched_pop_df_reads_colname=millipede_input_data_loader.enriched_pop_df_reads_colname,                               
+                                                       baseline_pop_df_reads_colname= millipede_input_data_loader.baseline_pop_df_reads_colname,
+                                                       presort_pop_df_reads_colname=millipede_input_data_loader.presort_pop_df_reads_colname,
                                                        sigma_scale_normalized= design_matrix_processing_specification.sigma_scale_normalized,
                                                        decay_sigma_scale= design_matrix_processing_specification.decay_sigma_scale,
                                                        K_enriched=design_matrix_processing_specification.K_enriched, 
@@ -543,14 +658,10 @@ class MillipedeInputDataExperimentalGroup:
 
             millipede_input_data: MillipedeInputData = MillipedeInputData(
                 data=data,
-                data_directory=data_directory, 
-                enriched_pop_fn_experiment_list=enriched_pop_fn_experiment_list,
-                enriched_pop_df_reads_colname=enriched_pop_df_reads_colname, 
-                baseline_pop_fn_experiment_list=baseline_pop_fn_experiment_list,
-                baseline_pop_df_reads_colname=baseline_pop_df_reads_colname, 
-                presort_pop_fn_experiment_list=presort_pop_fn_experiment_list,
-                presort_pop_df_reads_colname=presort_pop_df_reads_colname, 
-                reps=reps, 
+                enriched_pop_df_reads_colname=millipede_input_data_loader.enriched_pop_df_reads_colname,
+                baseline_pop_df_reads_colname=millipede_input_data_loader.baseline_pop_df_reads_colname,
+                presort_pop_df_reads_colname=millipede_input_data_loader.presort_pop_df_reads_colname,
+                reps=millipede_input_data_loader.reps,
                 replicate_merge_strategy=replicate_merge_strategy, 
                 experiment_merge_strategy=experiment_merge_strategy,
                 cutoff_specification=cutoff_specification,
@@ -705,6 +816,9 @@ class MillipedeInputDataExperimentalGroup:
             #encoding_df['scale_factor'] = 1.0 / np.sqrt(encoding_df['total_reads']) # NOTE: Intentionally keeping the total_reads as the raw to avoid being impact by normalization - this could be subject to change
         if 'scale_factor' not in encoding_df.columns:
             def set_scale_factor(input_encoding_df, K_enriched_selected, K_baseline_selected, a_parameter_selected):
+                input_encoding_df["K_enriched"] = K_enriched_selected
+                input_encoding_df["K_baseline"] = K_baseline_selected
+                input_encoding_df["a_parameter"] = a_parameter_selected
                 if sigma_scale_normalized:
                     if decay_sigma_scale:
                         input_encoding_df['scale_factor'] = ((decay_function(input_encoding_df[enriched_pop_df_reads_colname], K_enriched_selected, a_parameter_selected))  + (decay_function(input_encoding_df[baseline_pop_df_reads_colname], K_baseline_selected, a_parameter_selected)))/2 
@@ -720,10 +834,9 @@ class MillipedeInputDataExperimentalGroup:
 
             def retrieve_sample_parameter(parameter_input, experiment_index, replicate_index):
                 if type(parameter_input) is list:
-                    assert replicate_index is not None, "Replicate index must be provided, this is a developer error"
+                    assert replicate_index is not None, "Replicate index must be provided"
                     if type(parameter_input[0]) is list:
-                        assert experiment_index is not None, "Experiment index must be provided, this is a developer error"
-                        assert parameter_input[experiment_index] is list, f"{parameter_input[experiment_index]} is not a list with experiment_index={experiment_index} and replicate_index={replicate_index}, this is a developer error. parameter_input={parameter_input}"
+                        assert experiment_index is not None, "Experiment index must be provided"
                         parameter_input_selected = parameter_input[experiment_index][replicate_index]
                     else:
                         parameter_input_selected = parameter_input[rep_index]

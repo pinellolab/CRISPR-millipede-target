@@ -1,4 +1,5 @@
 from .models_processing import (MillipedeInputDataExperimentalGroup,
+                                MillipedeInputDataLoader,
                                 MillipedeModelExperimentalGroup,
                                 RawEncodingDataframesExperimentalGroup,
                                 EncodingEditingFrequenciesExperimentalGroup)

@@ -215,12 +215,8 @@ class MillipedeInputData:
         Provides relevant input data for a Millipede model specification
     """
     data: Union[pd.DataFrame, List[pd.DataFrame], List[List[pd.DataFrame]]]
-    data_directory: str
-    enriched_pop_fn_experiment_list: List[str]
     enriched_pop_df_reads_colname: str
-    baseline_pop_fn_experiment_list: List[str]
     baseline_pop_df_reads_colname: str
-    presort_pop_fn_experiment_list: Optional[List[str]]
     presort_pop_df_reads_colname: Optional[str]
     reps: List[int]
     cutoff_specification:MillipedeCutoffSpecification

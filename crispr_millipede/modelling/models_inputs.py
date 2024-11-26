@@ -158,7 +158,8 @@ class MillipedeDesignMatrixProcessingSpecification:
     decay_sigma_scale: bool = True
     K_enriched: Union[float, List[float], List[List[float]]] = 5
     K_baseline: Union[float, List[float], List[List[float]]] = 5
-    a_parameter: Union[float, List[float], List[List[float]]] = 300
+    a_parameter_enriched: Union[float, List[float], List[List[float]]] = 300
+    a_parameter_baseline: Union[float, List[float], List[List[float]]] = 300
     set_offset_as_default: bool = False
     set_offset_as_total_reads: bool = False
     set_offset_as_enriched: bool = False
@@ -173,10 +174,10 @@ class MillipedeDesignMatrixProcessingSpecification:
                 # Recursively convert nested lists to tuples
                 return tuple(make_hashable(sub_item) for sub_item in item)
             return item
-        return hash((self.wt_normalization, self.total_normalization, self.sigma_scale_normalized, self.decay_sigma_scale, make_hashable(self.K_enriched), make_hashable(self.K_baseline), make_hashable(self.a_parameter), self.set_offset_as_default, self.set_offset_as_total_reads, self.set_offset_as_enriched, self.set_offset_as_baseline, self.set_offset_as_presort, self.offset_normalized, self.offset_psuedocount))
+        return hash((self.wt_normalization, self.total_normalization, self.sigma_scale_normalized, self.decay_sigma_scale, make_hashable(self.K_enriched), make_hashable(self.K_baseline), make_hashable(self.a_parameter_enriched), make_hashable(self.a_parameter_baseline), self.set_offset_as_default, self.set_offset_as_total_reads, self.set_offset_as_enriched, self.set_offset_as_baseline, self.set_offset_as_presort, self.offset_normalized, self.offset_psuedocount))
     
     def __str__(self):
-        return f"wt_normalization={self.wt_normalization};total_normalization={self.total_normalization};sigma_scale_normalized={self.sigma_scale_normalized};decay_sigma_scale={self.decay_sigma_scale};K_enriched={self.K_enriched};K_baseline={self.K_baseline};a_parameter={self.a_parameter}; set_offset_as_default={self.set_offset_as_default}, set_offset_as_total_reads={self.set_offset_as_total_reads}, set_offset_as_enriched={self.set_offset_as_enriched}, set_offset_as_baseline={self.set_offset_as_baseline}, set_offset_as_presort={self.set_offset_as_presort}, offset_normalized={self.offset_normalized}, offset_psuedocount={self.offset_psuedocount}"
+        return f"wt_normalization={self.wt_normalization};total_normalization={self.total_normalization};sigma_scale_normalized={self.sigma_scale_normalized};decay_sigma_scale={self.decay_sigma_scale};K_enriched={self.K_enriched};K_baseline={self.K_baseline};a_parameter_enriched={self.a_parameter_enriched}; a_parameter_baseline={self.a_parameter_baseline}; set_offset_as_default={self.set_offset_as_default}, set_offset_as_total_reads={self.set_offset_as_total_reads}, set_offset_as_enriched={self.set_offset_as_enriched}, set_offset_as_baseline={self.set_offset_as_baseline}, set_offset_as_presort={self.set_offset_as_presort}, offset_normalized={self.offset_normalized}, offset_psuedocount={self.offset_psuedocount}"
     
     def __repr__(self):
         return str(self)

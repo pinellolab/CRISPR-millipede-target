@@ -597,7 +597,8 @@ class MillipedeInputDataExperimentalGroup:
                                                        decay_sigma_scale= design_matrix_processing_specification.decay_sigma_scale,
                                                        K_enriched=design_matrix_processing_specification.K_enriched, 
                                                        K_baseline=design_matrix_processing_specification.K_baseline, 
-                                                       a_parameter=design_matrix_processing_specification.a_parameter,
+                                                       a_parameter_enriched=design_matrix_processing_specification.a_parameter_enriched,
+                                                       a_parameter_baseline=design_matrix_processing_specification.a_parameter_baseline,
                                                        set_offset_as_default=design_matrix_processing_specification.set_offset_as_default,
                                                        set_offset_as_total_reads=design_matrix_processing_specification.set_offset_as_total_reads,
                                                        set_offset_as_enriched=design_matrix_processing_specification.set_offset_as_enriched,
@@ -765,7 +766,8 @@ class MillipedeInputDataExperimentalGroup:
                                  decay_sigma_scale: bool,
                                  K_enriched: Union[float, List[float], List[List[float]]],
                                  K_baseline: Union[float, List[float], List[List[float]]],
-                                 a_parameter: Union[float, List[float], List[List[float]]],
+                                 a_parameter_enriched: Union[float, List[float], List[List[float]]],
+                                 a_parameter_baseline: Union[float, List[float], List[List[float]]],
                                  set_offset_as_default: bool,
                                  set_offset_as_total_reads: bool,
                                  set_offset_as_enriched: bool,
@@ -815,18 +817,19 @@ class MillipedeInputDataExperimentalGroup:
         #if 'scale_factor' not in encoding_df.columns: 
             #encoding_df['scale_factor'] = 1.0 / np.sqrt(encoding_df['total_reads']) # NOTE: Intentionally keeping the total_reads as the raw to avoid being impact by normalization - this could be subject to change
         if 'scale_factor' not in encoding_df.columns:
-            def set_scale_factor(input_encoding_df, K_enriched_selected, K_baseline_selected, a_parameter_selected):
+            def set_scale_factor(input_encoding_df, K_enriched_selected, K_baseline_selected, a_parameter_enriched_selected, a_parameter_baseline_selected):
                 input_encoding_df["K_enriched"] = K_enriched_selected
                 input_encoding_df["K_baseline"] = K_baseline_selected
-                input_encoding_df["a_parameter"] = a_parameter_selected
+                input_encoding_df["a_parameter_enriched"] = a_parameter_enriched_selected
+                input_encoding_df["a_parameter_baseline"] = a_parameter_baseline_selected
                 if sigma_scale_normalized:
                     if decay_sigma_scale:
-                        input_encoding_df['scale_factor'] = ((decay_function(input_encoding_df[enriched_pop_df_reads_colname], K_enriched_selected, a_parameter_selected))  + (decay_function(input_encoding_df[baseline_pop_df_reads_colname], K_baseline_selected, a_parameter_selected)))/2 
+                        input_encoding_df['scale_factor'] = ((decay_function(input_encoding_df[enriched_pop_df_reads_colname], K_enriched_selected, a_parameter_enriched_selected))  + (decay_function(input_encoding_df[baseline_pop_df_reads_colname], K_baseline_selected, a_parameter_baseline_selected)))/2 
                     else:
                         input_encoding_df['scale_factor'] = (K_enriched_selected / np.sqrt(input_encoding_df[enriched_pop_df_reads_colname])) + (input_encoding_df / np.sqrt(input_encoding_df[baseline_pop_df_reads_colname]))
                 else:
                     if decay_sigma_scale:
-                        input_encoding_df['scale_factor'] = ((decay_function(input_encoding_df[enriched_pop_df_reads_colname + "_raw"], K_enriched_selected, a_parameter_selected)) + (decay_function(input_encoding_df[baseline_pop_df_reads_colname + "_raw"], K_baseline_selected, a_parameter_selected)))/2 
+                        input_encoding_df['scale_factor'] = ((decay_function(input_encoding_df[enriched_pop_df_reads_colname + "_raw"], K_enriched_selected, a_parameter_enriched_selected)) + (decay_function(input_encoding_df[baseline_pop_df_reads_colname + "_raw"], K_baseline_selected, a_parameter_baseline_selected)))/2 
                     else:
                         input_encoding_df['scale_factor'] = (K_enriched_selected / np.sqrt(input_encoding_df[enriched_pop_df_reads_colname + "_raw"])) + (K_baseline_selected / np.sqrt(input_encoding_df[baseline_pop_df_reads_colname + "_raw"]))
                 return input_encoding_df
@@ -855,11 +858,12 @@ class MillipedeInputDataExperimentalGroup:
                     # Get the corresponding sigma scale parameter based on the exp/rep index
                     K_enriched_selected = retrieve_sample_parameter(K_enriched, experiment_index=exp_index, replicate_index=rep_index)
                     K_baseline_selected = retrieve_sample_parameter(K_baseline, experiment_index=exp_index, replicate_index=rep_index)
-                    a_parameter_selected = retrieve_sample_parameter(a_parameter, experiment_index=exp_index, replicate_index=rep_index)
+                    a_parameter_enriched_selected = retrieve_sample_parameter(a_parameter_enriched, experiment_index=exp_index, replicate_index=rep_index)
+                    a_parameter_baseline_selected = retrieve_sample_parameter(a_parameter_baseline, experiment_index=exp_index, replicate_index=rep_index)
 
                     # Subset the encoding by the intercept index and add scale factor
                     sample_encoding_df = encoding_df[encoding_df[intercept_col] == 1]
-                    sample_encoding_df = set_scale_factor(sample_encoding_df, K_enriched_selected=K_enriched_selected, K_baseline_selected=K_baseline_selected, a_parameter_selected=a_parameter_selected)
+                    sample_encoding_df = set_scale_factor(sample_encoding_df, K_enriched_selected=K_enriched_selected, K_baseline_selected=K_baseline_selected, a_parameter_enriched_selected=a_parameter_enriched_selected, a_parameter_baseline_selected=a_parameter_baseline_selected)
                     sample_encoding_df_list.append(sample_encoding_df)
                 
                 # Concatenate all the updated sample encoding DFs into the complete encoding DF
@@ -869,19 +873,21 @@ class MillipedeInputDataExperimentalGroup:
                 if replicate_i is None:
                     if experiment_i is None:
                         # If no explicit experiment or replicate index is provided, then expecting a single sigma_scale parameter but must assert the input first
-                        assert isinstance(K_enriched, (int, float)), f"K_enriched {K_enriched} and all sigma_scale_parameters (K_enriched, K_baseline, a_parameter) must be an int/float type"
-                        assert isinstance(K_baseline, (int, float)), f"K_baseline {K_baseline} and all sigma_scale_parameters (K_enriched, K_baseline, a_parameter) must be an int/float type"
-                        assert isinstance(a_parameter, (int, float)), f"a_parameter {a_parameter} and all sigma_scale_parameters (K_enriched, K_baseline, a_parameter) must be an int/float type"
+                        assert isinstance(K_enriched, (int, float)), f"K_enriched {K_enriched} and all sigma_scale_parameters (K_enriched, K_baseline, a_parameter_enriched, a_parameter_baseline) must be an int/float type"
+                        assert isinstance(K_baseline, (int, float)), f"K_baseline {K_baseline} and all sigma_scale_parameters (K_enriched, K_baseline, a_parameter_enriched, a_parameter_baseline) must be an int/float type"
+                        assert isinstance(a_parameter_enriched, (int, float)), f"a_parameter {a_parameter_enriched} and all sigma_scale_parameters (K_enriched, K_baseline, a_parameter_enriched, a_parameter_baseline) must be an int/float type"
+                        assert isinstance(a_parameter_baseline, (int, float)), f"a_parameter {a_parameter_baseline} and all sigma_scale_parameters (K_enriched, K_baseline, a_parameter_enriched, a_parameter_baseline) must be an int/float type"
                         K_enriched_selected = K_enriched
                         K_baseline_selected = K_baseline
-                        a_parameter_selected = a_parameter
+                        a_parameter_enriched_selected = a_parameter_enriched
+                        a_parameter_baseline_selected = a_parameter_baseline
                 else:
                     # If replicate (and experiment) index is provided, get the selected sigma_scale parameters
                     K_enriched_selected = retrieve_sample_parameter(K_enriched, experiment_i, replicate_i)
                     K_baseline_selected = retrieve_sample_parameter(K_baseline, experiment_i, replicate_i)
-                    a_parameter_selected = retrieve_sample_parameter(a_parameter, experiment_i, replicate_i)
-                
-                encoding_df = set_scale_factor(encoding_df, K_enriched_selected=K_enriched_selected, K_baseline_selected=K_baseline_selected, a_parameter_selected=a_parameter_selected)
+                    a_parameter_enriched_selected = retrieve_sample_parameter(a_parameter_enriched, experiment_i, replicate_i)
+                    a_parameter_baseline_selected = retrieve_sample_parameter(a_parameter_baseline, experiment_i, replicate_i)
+                encoding_df = set_scale_factor(encoding_df, K_enriched_selected=K_enriched_selected, K_baseline_selected=K_baseline_selected, a_parameter_enriched_selected=a_parameter_enriched_selected, a_parameter_baseline_selected=a_parameter_baseline_selected)
             
         if 'psi0' not in encoding_df.columns:
             if set_offset_as_default:

@@ -190,7 +190,7 @@ class MillipedeInputDataLoader:
             merged_df_experiment_list.append(merged_df)
         return merged_df_experiment_list
         
-    def plot_binned_reads_by_score_variance(self, ymax = 500, bin_width = 10, figsize_width = 12, figsize_height = 10) -> List[List[pd.DataFrame]]:
+    def plot_binned_reads_by_score_standard_deviation(self, ymax = 500, bin_width = 10, figsize_width = 12, figsize_height = 10) -> List[List[pd.DataFrame]]:
         unprocessed_merged_experiment_df_list_copy=[]
         for experiment_i, unprocessed_exp_merged_rep_df_list in enumerate(self.unprocessed_merged_experiment_df_list):
             unprocessed_exp_merged_rep_df_list_copy = []
@@ -204,23 +204,23 @@ class MillipedeInputDataLoader:
                 unprocessed_merged_exp_rep_df_copy['enriched_bins'] = pd.cut(enriched_read_counts, bins)
                 unprocessed_merged_exp_rep_df_copy['baseline_bins'] = pd.cut(baseline_read_counts, bins)
 
-                # Compute variance for each bin
-                enriched_variance_per_bin = unprocessed_merged_exp_rep_df_copy.groupby('enriched_bins')['score'].var().reset_index()
-                baseline_variance_per_bin = unprocessed_merged_exp_rep_df_copy.groupby('baseline_bins')['score'].var().reset_index()
+                # Compute standard deviation for each bin
+                enriched_std_per_bin = unprocessed_merged_exp_rep_df_copy.groupby('enriched_bins')['score'].std().reset_index()
+                baseline_std_per_bin = unprocessed_merged_exp_rep_df_copy.groupby('baseline_bins')['score'].std().reset_index()
 
                 # Plotting
                 fig, axes = plt.subplots(2,1, figsize=(figsize_width, figsize_height))
                 plt.subplots_adjust(hspace=0.4)
-                axes[0].bar(enriched_variance_per_bin['enriched_bins'].astype(str), enriched_variance_per_bin['score'], width=0.8)
+                axes[0].bar(enriched_std_per_bin['enriched_bins'].astype(str), enriched_std_per_bin['score'], width=0.8)
                 axes[0].set_xlabel(f'Bins of {self.enriched_pop_df_reads_colname}')
-                axes[0].set_ylabel('Variance of score')
-                axes[0].set_title(f'Variance of score across bins of {self.enriched_pop_df_reads_colname} for experiment {experiment_i} and replicate {replicate_i}', fontsize=12)
+                axes[0].set_ylabel('Standard deviation of score')
+                axes[0].set_title(f'Standard deviation of score across bins of {self.enriched_pop_df_reads_colname} for experiment {experiment_i} and replicate {replicate_i}', fontsize=12)
                 axes[0].set_xticklabels(axes[0].get_xticklabels(), rotation=45, ha='right', fontsize=6)
 
-                axes[1].bar(baseline_variance_per_bin['baseline_bins'].astype(str), baseline_variance_per_bin['score'], width=0.8)
+                axes[1].bar(baseline_std_per_bin['baseline_bins'].astype(str), baseline_std_per_bin['score'], width=0.8)
                 axes[1].set_xlabel(f'Bins of {self.baseline_pop_df_reads_colname}')
-                axes[1].set_ylabel('Variance of score')
-                axes[1].set_title(f'Variance of score across bins of {self.baseline_pop_df_reads_colname} for experiment {experiment_i} and replicate {replicate_i}', fontsize=12)
+                axes[1].set_ylabel('Standard deviation of score')
+                axes[1].set_title(f'Standard deviation of score across bins of {self.baseline_pop_df_reads_colname} for experiment {experiment_i} and replicate {replicate_i}', fontsize=12)
                 axes[1].set_xticklabels(axes[1].get_xticklabels(), rotation=45, ha='right', fontsize=6)
 
                 plt.show()

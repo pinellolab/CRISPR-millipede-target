@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from typing import List, Optional, Tuple, Union
 from functools import reduce
 import copy
+from decimal import Decimal, getcontext
 
 def find(s, ch):
     return [i for i, ltr in enumerate(s) if ltr == ch]

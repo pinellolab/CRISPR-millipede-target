@@ -2,7 +2,7 @@ import pandas as pd
 import numpy as np
 from pandarallel import pandarallel
 from dataclasses import dataclass, field
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Union
 from functools import reduce
 import copy
 
@@ -88,26 +88,138 @@ class EncodingParameters:
     trim_right: int = 0
     remove_denoised: bool = False
 
+def sum_technical_replicate_allele_tables(df_list):
+    """
+    Merge a list of dataframes by the key columns:
+    Aligned_Sequence, Reference_Sequence, Reference_Name, Read_Status, n_deleted, n_inserted, n_mutated
+    Sum the '#Reads' and recalc '%Reads' as (#Reads / total_reads) * 100 with 16 decimal places.
+
+    Returns a new DataFrame where '%Reads' is a string with 16 decimal places (0..100).
+    If you'd prefer Decimal objects instead of strings for '%Reads', see note below.
+    """
+    # keys to group by
+    key_cols = [
+        "Aligned_Sequence",
+        "Reference_Sequence",
+        "Reference_Name",
+        "Read_Status",
+        "n_deleted",
+        "n_inserted",
+        "n_mutated",
+    ]
+
+    # defensive: ensure input is a list and non-empty
+    if not isinstance(df_list, (list, tuple)) or len(df_list) == 0:
+        raise ValueError("df_list must be a non-empty list (or tuple) of pandas DataFrames")
+
+    # concat then groupby to perform an outer-merge by keys and sum #Reads
+    concat = pd.concat(df_list, ignore_index=True, sort=False)
+
+    # ensure #Reads column exists and is numeric
+    if "#Reads" not in concat.columns:
+        raise KeyError("#Reads column not found in concatenated dataframe")
+    concat["#Reads"] = pd.to_numeric(concat["#Reads"], errors="coerce").fillna(0).astype(int)
+
+    # group and sum #Reads; keep other key columns
+    grouped = (
+        concat
+        .groupby(key_cols, dropna=False, as_index=False)
+        .agg({ "#Reads": "sum" })
+    )
+
+    # total reads across all grouped rows
+    total_reads = int(grouped["#Reads"].sum())
+
+    # use Decimal for high-precision percent calculation
+    # set a high precision to avoid rounding issues, then quantize to 16 decimals
+    getcontext().prec = 50
+    quant = Decimal("0." + ("0" * 15) + "1")   # quantization step for 16 decimal places
+
+    if total_reads == 0:
+        # If there are no reads at all, set %Reads to 0.000... (16 decimals)
+        grouped["%Reads"] = "0." + ("0" * 16)
+        return grouped
+
+    dec_total = Decimal(total_reads)
+
+    def calc_pct_str(nreads_int):
+        dec_val = (Decimal(nreads_int) / dec_total) * Decimal(100)
+        # round half up to 16 decimal places
+        dec_q = dec_val.quantize(quant, rounding=ROUND_HALF_UP)
+        # return as string (keeps trailing zeros)
+        return format(dec_q, "f")  # or str(dec_q)
+
+    grouped["%Reads"] = grouped["#Reads"].apply(calc_pct_str)
+
+    # Optionally reorder columns: keys, #Reads, %Reads
+    out_cols = key_cols + ["#Reads", "%Reads"]
+    return grouped[out_cols]
 
 @dataclass
 class EncodingDataFrames:
     encoding_parameters: EncodingParameters
     reference_sequence: str
-    population_baseline_filepaths: Optional[List[str]] = None
-    population_target_filepaths: Optional[List[str]] = None
-    population_presort_filepaths: Optional[List[str]] = None
-    wt_filepaths: Optional[List[str]] = None
+    population_baseline_filepaths: Optional[List[Union[str, List[str]]]] = None
+    population_target_filepaths: Optional[List[Union[str, List[str]]]] = None
+    population_presort_filepaths: Optional[List[Union[str, List[str]]]] = None
+    wt_filepaths: Optional[List[Union[str, List[str]]]] = None
     
     # TODO: Add post check to check if two are assigned, and lengths are the same (except the WT)
 
     def read_crispresso_allele_tables(self):
         read_allele_table = lambda filename : pd.read_csv(filename, compression='zip', header=0, sep='\t', quotechar='"')
         
-        self.population_baseline_df = None if self.population_baseline_filepaths is None else [read_allele_table(fn) for fn in self.population_baseline_filepaths]
-        self.population_target_df = None if self.population_target_filepaths is None else [read_allele_table(fn) for fn in self.population_target_filepaths]
-        self.population_presort_df = None if self.population_presort_filepaths is None else [read_allele_table(fn) for fn in self.population_presort_filepaths]
-        self.population_wt_df = None if self.wt_filepaths is None else [read_allele_table(fn) for fn in self.wt_filepaths]
+        if self.population_baseline_filepaths is None:
+            self.population_baseline_df = None
+        else:
+            population_baseline_df = []
+            for biological_replicate_input in self.population_baseline_filepaths:
+                if type(biological_replicate_input) is list:
+                    biological_replicate_allele_table = sum_technical_replicate_allele_tables([read_allele_table(technical_replicate_fn) for technical_replicate_fn in biological_replicate_input])
+                    population_baseline_df.append(biological_replicate_allele_table)
+                else:
+                    biological_replicate_allele_table = read_allele_table(fn)
+                    population_baseline_df.append(biological_replicate_allele_table)
+            self.population_baseline_df = population_baseline_df
 
+        if self.population_target_filepaths is None:
+            self.population_target_df = None
+        else:
+            population_target_df = []
+            for biological_replicate_input in self.population_target_filepaths:
+                if type(biological_replicate_input) is list:
+                    biological_replicate_allele_table = sum_technical_replicate_allele_tables([read_allele_table(technical_replicate_fn) for technical_replicate_fn in biological_replicate_input])
+                    population_target_df.append(biological_replicate_allele_table)
+                else:
+                    biological_replicate_allele_table = read_allele_table(fn)
+                    population_target_df.append(biological_replicate_allele_table)
+            self.population_target_df = population_target_df
+
+        if self.population_presort_filepaths is None:
+            self.population_presort_df = None
+        else:
+            population_presort_df = []
+            for biological_replicate_input in self.population_presort_filepaths:
+                if type(biological_replicate_input) is list:
+                    biological_replicate_allele_table = sum_technical_replicate_allele_tables([read_allele_table(technical_replicate_fn) for technical_replicate_fn in biological_replicate_input])
+                    population_presort_df.append(biological_replicate_allele_table)
+                else:
+                    biological_replicate_allele_table = read_allele_table(fn)
+                    population_presort_df.append(biological_replicate_allele_table)
+            self.population_presort_df = population_presort_df
+
+        if self.wt_filepaths is None:
+            self.population_presort_df = None
+        else:
+            population_wt_df = []
+            for biological_replicate_input in self.wt_filepaths:
+                if type(biological_replicate_input) is list:
+                    biological_replicate_allele_table = sum_technical_replicate_allele_tables([read_allele_table(technical_replicate_fn) for technical_replicate_fn in biological_replicate_input])
+                    population_wt_df.append(biological_replicate_allele_table)
+                else:
+                    biological_replicate_allele_table = read_allele_table(fn)
+                    population_wt_df.append(biological_replicate_allele_table)
+            self.population_wt_df = population_wt_df
 
     def encode_crispresso_allele_table(self, progress_bar=False, cores=1):
         parse_lambda = lambda row: parse_row(row, self.reference_sequence)

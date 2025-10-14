@@ -198,6 +198,7 @@ class MillipedeModelSpecification:
     tau: float = 0.01 #tau parameter
     tau_intercept: float = 1.0e-4
     
+    
     def validate_merge_strategies(self, replicate_merge_strategy: MillipedeReplicateMergeStrategy, experiment_merge_strategy:MillipedeExperimentMergeStrategy):
         if experiment_merge_strategy == MillipedeExperimentMergeStrategy.SUM:
                 assert replicate_merge_strategy == MillipedeReplicateMergeStrategy.SUM, "replicate_merge_strategy must be SUM if experiment_merge_strategy is SUM"

@@ -12,6 +12,7 @@ def find(s, ch):
 ''' 
     Function to perform substitution encoding
 '''
+# DEPRECATED 20251027 replaced for vectorized to improve speed
 def get_substitution_encoding(aligned_sequence, original_seq, skip_index=0):
     assert len(aligned_sequence) == len(original_seq) # Ensure the aligned sequence (from allele table) is equal size to the reference sequence
     
@@ -55,12 +56,13 @@ def get_substitution_encoding(aligned_sequence, original_seq, skip_index=0):
     encodings_per_position_series = pd.Series(encodings_per_position_list, index = index, name="encoding")
     return encodings_per_position_series
 
-
+# DEPRECATED 20251027
 '''
     For a particular row in the CRISPResso table, take the encoding
     
     Removed arguments: encoding
 '''
+# DEPRECATED 20251027 replaced for vectorized to improve speed
 def parse_row(row, original_seq):
     aligned_sequence = row["Aligned_Sequence"]
     reference_sequence = row["Reference_Sequence"]
@@ -71,6 +73,54 @@ def parse_row(row, original_seq):
     encodings_per_position_series = get_substitution_encoding(aligned_sequence, original_seq)
     return encodings_per_position_series
 
+
+# Note 20251027:  from vectorization: https://chatgpt.com/share/68ff9747-34a4-8006-b93f-9be3a4a5c9a6
+# Does NOT handle insertions now, since this would prevent equal lengths of each allele thereby preventing straightforward vectorization
+def encode_population_df_vectorized(df, reference_seq):
+    """
+    Vectorized encoding for a dataframe of aligned sequences.
+    df: DataFrame with column 'Aligned_Sequence'
+    reference_seq: string of reference sequence
+    Returns: list of pandas Series with substitution encodings for each row
+    """
+    # Convert all sequences to uppercase and list of characters
+    ref_array = np.array(list(reference_seq))
+    seq_array = np.array([list(seq) for seq in df["Aligned_Sequence"].values])
+    
+    # Identify mismatches (num_sequences x seq_len)
+    mismatches = seq_array != ref_array  # True where there is a mismatch
+    
+    num_seqs, seq_len = seq_array.shape
+    nucleotides = np.array(["A", "C", "T", "G", "N", "-"])
+    
+    # Precompute mismatch nucleotide array (seq_len x 5) - exclude reference
+    mismatch_nts = np.array([np.delete(nucleotides, np.where(nucleotides == ref_array[i])) 
+                            for i in range(seq_len)])  # shape: seq_len x 5
+    
+    # Repeat for all sequences
+    mismatch_nts_full = np.tile(mismatch_nts, (num_seqs, 1))  # num_seqs*seq_len x 5 flattened
+    pos_flat = np.repeat(np.arange(seq_len), mismatch_nts.shape[1])
+    pos_flat = np.tile(pos_flat, num_seqs)
+    ref_flat = np.repeat(ref_array, mismatch_nts.shape[1])
+    ref_flat = np.tile(ref_flat, num_seqs)
+    
+    # Flatten sequences for comparison
+    seq_flat = seq_array.repeat(mismatch_nts.shape[1], axis=1).flatten()
+    
+    # Flatten alternative nucleotides
+    alt_flat = mismatch_nts_full.flatten()
+    
+    # Encoding: 1 if sequence matches alternative nucleotide
+    encoding_flat = (seq_flat == alt_flat).astype(int)
+    
+    # MultiIndex
+    full_change_flat = np.char.add(np.char.add(pos_flat.astype(str), ref_flat),
+                                np.char.add(">", alt_flat))
+    index = pd.MultiIndex.from_arrays(
+        [full_change_flat, pos_flat, ref_flat, alt_flat],
+        names=["FullChange", "Position", "Ref", "Alt"]
+    )
+    return pd.Series(encoding_flat, index=index, name="encoding")
 
 @dataclass
 class EncodingParameters:
@@ -221,29 +271,33 @@ class EncodingDataFrames:
                     population_wt_df.append(biological_replicate_allele_table)
             self.population_wt_df = population_wt_df
 
-    def encode_crispresso_allele_table(self, progress_bar=False, cores=1):
+    def encode_crispresso_allele_table(self, progress_bar=False):
         parse_lambda = lambda row: parse_row(row, self.reference_sequence)
         
-        if cores > 1:
-            pandarallel.initialize(progress_bar=progress_bar, nb_workers=cores)
-            print("Encoding population_baseline_df")
-            self.population_baseline_encoding = None if self.population_baseline_df is None else [df.parallel_apply(parse_lambda, axis=1) for df in self.population_baseline_df]
-            print("Encoding population_target_df")
-            self.population_target_encoding = None if self.population_target_df is  None else [df.parallel_apply(parse_lambda, axis=1) for df in self.population_target_df]
-            print("Encoding population_presort_df")
-            self.population_presort_encoding = None if self.population_presort_df is  None else [df.parallel_apply(parse_lambda, axis=1) for df in self.population_presort_df]
-            print("Encoding population_wt_df")
-            self.population_wt_encoding = None if self.population_wt_df is  None else [df.parallel_apply(parse_lambda, axis=1) for df in self.population_wt_df]
-        else:
-            print("Encoding population_baseline_df")
-            self.population_baseline_encoding = None if self.population_baseline_df is None else [df.apply(parse_lambda, axis=1) for df in self.population_baseline_df]
-            print("Encoding population_target_df")
-            self.population_target_encoding = None if self.population_target_df is  None else [df.apply(parse_lambda, axis=1) for df in self.population_target_df]
-            print("Encoding population_presort_df")
-            self.population_presort_encoding = None if self.population_presort_df is  None else [df.apply(parse_lambda, axis=1) for df in self.population_presort_df]
-            print("Encoding population_wt_df")
-            self.population_wt_encoding = None if self.population_wt_df is  None else [df.apply(parse_lambda, axis=1) for df in self.population_wt_df]
+        print("Encoding population_baseline_df")
+        self.population_baseline_encoding = None if self.population_baseline_df is None else encode_population_df_vectorized(
+            self.population_baseline_df,
+            self.reference_sequence
+        )
+    
+        print("Encoding population_target_df")
+        self.population_target_encoding = None if self.population_target_df is None else encode_population_df_vectorized(
+            self.population_target_df,
+            self.reference_sequence
+        )
 
+
+        print("Encoding population_presort_df")
+        self.population_presort_encoding = None if self.population_presort_df is None else encode_population_df_vectorized(
+            self.population_presort_df,
+            self.reference_sequence
+        )
+
+        print("Encoding population_wt_df")
+        self.population_wt_encoding = None if self.population_wt_df is None else encode_population_df_vectorized(
+            self.population_wt_df,
+            self.reference_sequence
+        )
 
     def postprocess_encoding(self):
         def trim_edges(encoding_dfs: List[pd.DataFrame], trim_left: int, trim_right: int) -> List[pd.DataFrame]:

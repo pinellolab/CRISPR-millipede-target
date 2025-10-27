@@ -35,7 +35,7 @@ class MillipedeInputDataLoader:
     baseline_pop_fn_experiment_list: List[str]
     baseline_pop_df_reads_colname: str
     experiment_labels: List[str]
-    reps: List[int]
+    reps: Optional[List[List[int]]]
     presort_pop_fn_experiment_list: Optional[List[str]] = None
     presort_pop_df_reads_colname: Optional[str] = None
     unprocessed_merged_experiment_df_list: Optional[List[List[pd.DataFrame]]] = None
@@ -87,7 +87,7 @@ class MillipedeInputDataLoader:
                 # type List[pd.DataFrame] if relicates are combined
                 # type List[List[pd.DataFrame]] if replicates are separate
                 unprocessed_exp_merged_rep_df_list: List[pd.DataFrame] = []
-                for rep in self.reps:
+                for rep in self.reps[experiment_index]:
                     '''
                         Check file directories
                     '''
@@ -235,6 +235,7 @@ class MillipedeInputDataLoader:
 class MillipedeInputDataExperimentalGroup:
     millipede_model_specification_set: Mapping[str, MillipedeModelSpecification]
     millipede_input_data_loader: MillipedeInputDataLoader
+    remove_empty_features: bool = True
 
     """
         Generates the MillipedeInputData objects provided MillipedeModelSpecifications and other relevant parameters such as filepaths to the data tables, read thresholds, and labels.
@@ -620,6 +621,11 @@ class MillipedeInputDataExperimentalGroup:
                 #merged_experiments_df = merged_experiments_df[merged_experiments_df["total_reads"] > 0] # Ensure non-zero reads to prevent error during modelling
 
                 merged_experiments_df = __add_supporting_columns_partial(encoding_df = merged_experiments_df)
+
+                if self.remove_empty_features:
+                    merged_experiments_df = merged_experiments_df.drop(
+                        columns=[col for col in nucleotide_ids if merged_experiments_df[col].sum() == 0]
+                    )
                 data = merged_experiments_df
             elif experiment_merge_strategy == MillipedeExperimentMergeStrategy.COVARIATE:
                 # DEVELOPER NOTE: Ensure that intercept_postfix between per-replicate and per-experiment are different, else there could be overwriting during intercept assignment
@@ -631,6 +637,12 @@ class MillipedeInputDataExperimentalGroup:
                     merged_experiments_df = [__add_supporting_columns_partial(encoding_df = merged_experiments_df_i) for replicate_i, merged_experiments_df_i in enumerate(merged_experiments_df)]
                     #merged_experiments_df = [merged_experiments_df_i[merged_experiments_df_i["total_reads"] > 0] for merged_experiments_df_i in merged_experiments_df] # Ensure non-zero reads to prevent error during modelling
                     
+                    if self.remove_empty_features:
+                        nucleotide_ids = [col for col in merged_experiments_df.columns if ">" in col]
+                        merged_experiments_df = merged_experiments_df.drop(
+                            columns=[col for col in nucleotide_ids if merged_experiments_df[col].sum() == 0]
+                        )
+                        
                     data = merged_experiments_df
                 elif replicate_merge_strategy in [MillipedeReplicateMergeStrategy.SUM, MillipedeReplicateMergeStrategy.COVARIATE, MillipedeReplicateMergeStrategy.MODELLED_COMBINED]: # SINGLE MATRIX FOR ALL REPLICATES
                     merged_experiment_df_list: List[pd.DataFrame]
@@ -640,6 +652,12 @@ class MillipedeInputDataExperimentalGroup:
                     merged_experiments_df = __add_supporting_columns_partial(encoding_df = merged_experiments_df)
                     #merged_experiments_df = merged_experiments_df[merged_experiments_df["total_reads"] > 0] # Ensure non-zero reads to prevent error during modelling
 
+                    if self.remove_empty_features:
+                        nucleotide_ids = [col for col in merged_experiments_df.columns if ">" in col]
+                        merged_experiments_df = merged_experiments_df.drop(
+                            columns=[col for col in nucleotide_ids if merged_experiments_df[col].sum() == 0]
+                        )
+
                     data = merged_experiments_df
             elif experiment_merge_strategy == MillipedeExperimentMergeStrategy.SEPARATE:
                 if replicate_merge_strategy in [MillipedeReplicateMergeStrategy.SEPARATE, MillipedeReplicateMergeStrategy.MODELLED_SEPARATE]:
@@ -647,12 +665,35 @@ class MillipedeInputDataExperimentalGroup:
                     merged_experiment_df_list = [[__add_supporting_columns_partial(encoding_df = merged_rep_df, experiment_i=experiment_i, replicate_i=replicate_i) for replicate_i, merged_rep_df in enumerate(merged_rep_df_list)] for experiment_i, merged_rep_df_list in enumerate(merged_experiment_df_list)]
                     #merged_experiment_df_list = [[merged_rep_df[merged_rep_df["total_reads"] > 0] for merged_rep_df in merged_rep_df_list] for merged_rep_df_list in merged_experiment_df_list] # Ensure non-zero reads to prevent error during modelling
 
+                    if self.remove_empty_features:
+                        merged_experiment_df_list_tmp = []
+                        for merged_experiments_df_list_inner in merged_experiment_df_list:
+                            merged_experiment_df_list_inner_tmp = []
+                            for merged_experiments_df in merged_experiments_df_list_inner:
+                                nucleotide_ids = [col for col in merged_experiments_df.columns if ">" in col]
+                                merged_experiments_df_tmp = merged_experiments_df.drop(
+                                    columns=[col for col in nucleotide_ids if merged_experiments_df[col].sum() == 0]
+                                )
+                                merged_experiment_df_list_inner_tmp.append(merged_experiments_df_tmp)
+                            merged_experiment_df_list_tmp.append(merged_experiment_df_list_inner_tmp)
+                        merged_experiment_df_list=merged_experiment_df_list_tmp
+
                     data = merged_experiment_df_list
                 elif replicate_merge_strategy in [MillipedeReplicateMergeStrategy.SUM, MillipedeReplicateMergeStrategy.COVARIATE, MillipedeReplicateMergeStrategy.MODELLED_COMBINED]:
                     merged_experiment_df_list: List[pd.DataFrame]
                     merged_experiment_df_list = [__add_supporting_columns_partial(encoding_df = merged_reps_df, experiment_i=experiment_i) for experiment_i, merged_reps_df in enumerate(merged_experiment_df_list)]
                     #merged_experiment_df_list = [merged_reps_df[merged_reps_df["total_reads"] > 0] for merged_reps_df in merged_experiment_df_list]
-
+                    
+                    if self.remove_empty_features:
+                        merged_experiment_df_list_tmp = []
+                        for merged_experiments_df in merged_experiment_df_list:
+                            nucleotide_ids = [col for col in merged_experiments_df.columns if ">" in col]
+                            merged_experiments_df_tmp = merged_experiments_df.drop(
+                                columns=[col for col in nucleotide_ids if merged_experiments_df[col].sum() == 0]
+                            )
+                            merged_experiment_df_list_tmp.append(merged_experiments_df_tmp)
+                        merged_experiment_df_list=merged_experiment_df_list_tmp
+                        
                     data = merged_experiment_df_list
             else:
                 raise Exception("Developer error: Unexpected value for MillipedeExperimentMergeStrategy: {}".format(experiment_merge_strategy))
@@ -812,6 +853,7 @@ class MillipedeInputDataExperimentalGroup:
         
         if 'score' not in encoding_df.columns: 
             encoding_df['score'] = (enriched_read_counts - baseline_read_counts) / (enriched_read_counts + baseline_read_counts) 
+            encoding_df = encoding_df[~encoding_df['score'].isna()] # Remove rows where score is NA (due to 0 counts)
             
         # create scale_factor for normal likelihood model
         #if 'scale_factor' not in encoding_df.columns: 
@@ -1192,7 +1234,7 @@ class RawEncodingDataframesExperimentalGroup:
                                   presort_pop_fn_encodings_experiment_list: Optional[List[str]] = None,
                                   ctrl_pop_fn_encodings: Optional[Union[list, str]] = None,
                                   ctrl_pop_labels: Optional[Union[list, str]]=None,
-                                  reps:List[int]=None):
+                                  reps:Optional[List[int]]=None):
         self.enriched_pop_fn_encodings_experiment_list = enriched_pop_fn_encodings_experiment_list
         self.baseline_pop_fn_encodings_experiment_list = baseline_pop_fn_encodings_experiment_list
         self.presort_pop_fn_encodings_experiment_list = presort_pop_fn_encodings_experiment_list
@@ -1206,16 +1248,40 @@ class RawEncodingDataframesExperimentalGroup:
             assert len(enriched_pop_fn_encodings_experiment_list) == len(presort_pop_fn_encodings_experiment_list), "If presort_pop_fn_encodings_experiment_list is provided, it must be the same length as enriched_pop_encodings_df_list and baseline_pop_encodings_df_list"
         
         print(enriched_pop_fn_encodings_experiment_list)
+        enriched_pop_reps_list = []
         for fn in enriched_pop_fn_encodings_experiment_list:
             assert "{}" in fn, "Filename must have '{}' to replace with replicate ID, provided filename: " + str(fn)
-            self.__check_file_locations(fn, reps)
+            if reps is None:
+                enriched_pop_reps = self.__check_file_locations(fn)
+                enriched_pop_reps_list.append(enriched_pop_reps)
+            else:
+                self.__check_file_locations(fn, reps)
+        
+        baseline_pop_reps_list = []
         for fn in baseline_pop_fn_encodings_experiment_list:
             assert "{}" in fn, "Filename must have '{}' to replace with replicate ID, provided filename: " + str(fn)
-            self.__check_file_locations(fn, reps)
+            if reps is None:
+                baseline_pop_reps = self.__check_file_locations(fn)
+                baseline_pop_reps_list.append(baseline_pop_reps)
+            else:
+                self.__check_file_locations(fn, reps)
+        
         if presort_pop_fn_encodings_experiment_list != None: 
+            presort_pop_reps_list = []
             for fn in presort_pop_fn_encodings_experiment_list:
                 assert "{}" in fn, "Filename must have '{}' to replace with replicate ID, provided filename: " + str(fn)  
-                self.__check_file_locations(fn, reps)
+                if reps is None:
+                    presort_pop_reps = self.__check_file_locations(fn)
+                    presort_pop_reps_list.append(presort_pop_reps)
+                else:
+                    self.__check_file_locations(fn, reps)
+
+        if reps is None:
+            assert enriched_pop_reps_list == baseline_pop_reps_list, f"Enriched and baseline filenames have different number of replicates. Enriched={enriched_pop_reps_list}, baseline={baseline_pop_reps_list}"
+            reps=enriched_pop_reps_list
+            print(f"Final inferred replicate list: {reps}")
+            if presort_pop_fn_encodings_experiment_list != None: 
+                assert presort_pop_reps_list == reps, f"Presort has different filename replicates compared to baseline and enriched samples. Presort={presort_pop_reps_list}, enriched/baseline={reps}"
 
         '''
             Since the control pop fn encoding has a flexible structure, must appropriately validate with recursive code below
@@ -1257,26 +1323,20 @@ class RawEncodingDataframesExperimentalGroup:
             Read in the files
         '''
         # Recursive function to read encodings
-        def read_encodings_in_nested_list(sup_encoding_fn: Union[list, str], reps: Optional[List[int]]=None, _depth:int=0, _breadth:int=0):
+        def read_encodings_in_nested_list(sup_encoding_fn: Union[list, str], reps: Union[List[List[int]], List[int]]=None, _depth:int=0, _breadth:int=0):
             if isinstance(sup_encoding_fn, list):
                 sup_encoding_df_list = []
                 for i, subb_encoding_fn in enumerate(sup_encoding_fn):
-                    sup_encoding_df_list.append(read_encodings_in_nested_list(subb_encoding_fn, reps, _depth=_depth+1, _breadth=i))
+                    sup_encoding_df_list.append(read_encodings_in_nested_list(subb_encoding_fn, reps[i], _depth=_depth+1, _breadth=i))
                 return sup_encoding_df_list
             elif isinstance(sup_encoding_fn, str):
-                if reps != None:
-                    sup_encoding_df_reps_list = []
-                    for rep in reps:
-                        try:
-                            sup_encoding_df_reps_list.append(pd.read_pickle(sup_encoding_fn.format(rep)))
-                        except Exception as e:
-                            raise Exception("Error reading encoding {} in provided position of filename list (depth={}, breadth={}); original exception: {}".format(subb_encoding_fn.format(rep, depth, breadth, str(e))))
-                    return sup_encoding_df_reps_list
-                else:
+                sup_encoding_df_reps_list = []
+                for rep in reps:
                     try:
-                        return pd.read_pickle(sup_encoding_fn)
+                        sup_encoding_df_reps_list.append(pd.read_pickle(sup_encoding_fn.format(rep)))
                     except Exception as e:
                         raise Exception("Error reading encoding {} in provided position of filename list (depth={}, breadth={}); original exception: {}".format(subb_encoding_fn.format(rep, depth, breadth, str(e))))
+                return sup_encoding_df_reps_list
 
         print("Reading enriched population...")
         self.enriched_pop_encodings_df_experiment_list: List[List[pd.Dataframe]] = read_encodings_in_nested_list(enriched_pop_fn_encodings_experiment_list, reps)
@@ -1305,12 +1365,25 @@ class RawEncodingDataframesExperimentalGroup:
         
         self.validated = True
         
-    def __check_file_locations(self, fn: str, reps: Optional[List[int]]=None):
+    def __check_file_locations(self, fn: str, reps: Optional[List[int]]=None) -> Optional[List[int]]:
         if reps != None:
             for rep in reps:
                 assert exists(fn.format(rep)), "File not found: " + fn.format(rep)
         else:
-            assert exists(fn), "File not found: " + fn
+            file_available = True
+            reps = []
+            rep = 0
+            while file_available:
+                if exists(fn.format(rep)):
+                    reps.append(rep)
+                    rep = rep + 1
+                else:
+                    if len(reps) is 0:
+                        raise Exception("No files found. Make sure input filename contains {} to insert replicate number")
+                    file_available = False
+                    break
+            return reps
+            #exists(fn), "File not found: " + fn
 
 from typing import Callable
 

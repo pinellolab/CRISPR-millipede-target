@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from typing import List, Optional, Tuple, Union
 from functools import reduce
 import copy
+from decimal import Decimal, getcontext, ROUND_HALF_UP
 
 def find(s, ch):
     return [i for i, ltr in enumerate(s) if ltr == ch]
@@ -203,7 +204,11 @@ def sum_technical_replicate_allele_tables(df_list):
 
     # Optionally reorder columns: keys, #Reads, %Reads
     out_cols = key_cols + ["#Reads", "%Reads"]
-    return grouped[out_cols]
+    out_grouped = grouped[out_cols]
+    
+    # Sort by reads
+    out_grouped = out_grouped.sort_values("#Reads", ascending=False)
+    return out_grouped
 
 @dataclass
 class EncodingDataFrames:

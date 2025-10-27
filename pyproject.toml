@@ -1,23 +1,23 @@
 [tool.poetry]
 name = "crispr-millipede"
-version = "0.1.116"
+version = "0.1.129"
 description = "Calculate the enrichment scores of CRISPR alleles and variants from direct target amplicon-sequencing data using Bayesian linear regression model 'millipede'"
 authors = ["Basheer Becerra <bbecerra@fas.harvard.edu>"]
 readme = "README.md"
 packages = [{include = "crispr_millipede"}]
 
 [tool.poetry.dependencies]
-python = ">=3.10,<3.12"
+python = ">=3.8,<3.12"
 numpy = "1.24.4"
 scipy = "^1.10.1"
-matplotlib = "^3.7.1"
+matplotlib = "3.7.1"
 biopython = "^1.81"
 pandarallel = "^1.6.4"
 ipywidgets = "^8.1.2"
 typeguard = "^3.0.2"
 pandas = "^1.5.3"
-millipede-regression = "0.1.6"
-seaborn = "^0.13.2"
+millipede-regression = "0.1.7"
+seaborn = "0.13.2"
 crispr-shrinkage = "0.1.63"
 pydeseq2 = "0.4.4"
 plotly = "5.9.0"

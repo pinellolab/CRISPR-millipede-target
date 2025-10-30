@@ -634,7 +634,7 @@ class MillipedeInputDataExperimentalGroup:
                     merged_experiments_df: List[pd.DataFrame]
                     merged_experiments_df = [pd.concat([self.__get_intercept_df(merged_experiment_df_list), pd.concat(merged_experiment_df_i, ignore_index=True)], axis=1) for merged_experiment_df_i in merged_experiment_df_list]
                     merged_experiments_df = [merged_experiments_df_i.fillna(0.0) for merged_experiments_df_i in merged_experiments_df] # TODO 20221021: This is to ensure all intercept values are assigned (since NaNs exist with covariate by experiment) - there is possible if there are other NaN among features that it will be set to 0 unintentionally
-                    merged_experiments_df = [__add_supporting_columns_partial(encoding_df = merged_experiments_df_i) for replicate_i, merged_experiments_df_i in enumerate(merged_experiments_df)]
+                    merged_experiments_df = [__add_supporting_columns_partial(encoding_df = merged_experiments_df_i, replicate_i=replicate_i) for replicate_i, merged_experiments_df_i in enumerate(merged_experiments_df)]
                     #merged_experiments_df = [merged_experiments_df_i[merged_experiments_df_i["total_reads"] > 0] for merged_experiments_df_i in merged_experiments_df] # Ensure non-zero reads to prevent error during modelling
                     
                     if self.remove_empty_features:
@@ -824,6 +824,7 @@ class MillipedeInputDataExperimentalGroup:
         
         # Get intercept exp and reps for setting :
         intercept_columns = [col for col in  encoding_df.columns if "intercept" in col]
+        intercept_columns_samples = []
         if len(intercept_columns) > 0:
             exp_indices = []
             rep_indices = []
@@ -838,12 +839,15 @@ class MillipedeInputDataExperimentalGroup:
                         exp_indices.append(intercept_exp_i)
                     else:
                         raise Exception(f"No exp found in intercept column {col}. This is a developer bug, contact developers (see the cripsr-millipeede GitHub page for contact)")
+                    intercept_columns_samples.append(col)
                 else:
-                    exp_index = col.find("exp")
-                    if exp_index != -1:
-                        intercept_exp_i = int(col[(exp_index + len("exp")):])
-                        exp_indices.append(intercept_exp_i)
-                        rep_indices.append(replicate_i) # Add the explit replicate ID if only the experiment ID was found in the intercept column
+                    # DEPRECATED: If there is exp#, there must be exp#_rep# as well. Therefore we don't want to add duplicate sample encoding DFs
+                    pass
+                    #exp_index = col.find("exp")
+                    #if (exp_index != -1) and (replicate_i is not None):
+                    #    intercept_exp_i = int(col[(exp_index + len("exp")):])
+                    #    exp_indices.append(intercept_exp_i)
+                    #    rep_indices.append(replicate_i) # Add the explit replicate ID if only the experiment ID was found in the intercept column
         
 
         # Original
@@ -890,10 +894,10 @@ class MillipedeInputDataExperimentalGroup:
                 return parameter_input_selected
     
             # If the encoding as intercept columns, then extract the available exp/rep indices, subset by each exp/rep, get the correct sigma_scale parameters, and update the encoding DF
-            if intercept_columns:
+            if intercept_columns_samples:
                 # Iterate through each intercept index to get exp/rep index
                 sample_encoding_df_list = []
-                for intercept_index, intercept_col in enumerate(intercept_columns):
+                for intercept_index, intercept_col in enumerate(intercept_columns_samples):
                     exp_index = exp_indices[intercept_index]
                     rep_index = rep_indices[intercept_index]
                     
@@ -1378,7 +1382,7 @@ class RawEncodingDataframesExperimentalGroup:
                     reps.append(rep)
                     rep = rep + 1
                 else:
-                    if len(reps) is 0:
+                    if len(reps) == 0:
                         raise Exception("No files found. Make sure input filename contains {} to insert replicate number")
                     file_available = False
                     break

@@ -1222,10 +1222,10 @@ class RawEncodingDataframesExperimentalGroup:
     # TODO set_variables_constructor and read_in_files_constructor will be classmethods as alternative contructors (factor methods) see https://www.programiz.com/python-programming/methods/built-in/classmethod
     # TODO: Reimpliment set_variables_constructor based on new input arguments from read_in_files_constructor
     def set_variables_constructor(self, enriched_pop_encodings_df_list: List[pd.DataFrame], baseline_pop_encodings_df_list: List[pd.DataFrame], presort_pop_encodings_df_list: Optional[List[pd.DataFrame]] = None, wt_pop_encodings_df_list: Optional[List[pd.DataFrame]] = None):
-        self.enriched_pop_encodings_df_list = self.enriched_pop_encodings_df_list
-        self.baseline_pop_encodings_df_list = self.baseline_pop_encodings_df_list
-        self.presort_pop_encodings_df_list = self.presort_pop_encodings_df_list
-        self.wt_pop_encodings_df_list = self.wt_pop_encodings_df_list
+        self.enriched_pop_encodings_df_list = enriched_pop_encodings_df_list
+        self.baseline_pop_encodings_df_list = baseline_pop_encodings_df_list
+        self.presort_pop_encodings_df_list = presort_pop_encodings_df_list
+        self.wt_pop_encodings_df_list = wt_pop_encodings_df_list
         
         self.__post_validate()
         
@@ -1239,6 +1239,7 @@ class RawEncodingDataframesExperimentalGroup:
                                   ctrl_pop_fn_encodings: Optional[Union[list, str]] = None,
                                   ctrl_pop_labels: Optional[Union[list, str]]=None,
                                   reps:Optional[List[int]]=None):
+                                  
         self.enriched_pop_fn_encodings_experiment_list = enriched_pop_fn_encodings_experiment_list
         self.baseline_pop_fn_encodings_experiment_list = baseline_pop_fn_encodings_experiment_list
         self.presort_pop_fn_encodings_experiment_list = presort_pop_fn_encodings_experiment_list

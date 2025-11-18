@@ -22,9 +22,11 @@ from .models_inputs import *
 
 from .pydeseq import run_pydeseq2
 
-def decay_function(x, k, a, epsilon=0.01):
+def decay_function(x, k, a, c=1.0, epsilon=0.01):
+    # Exponential rate constant corresponding to epsilon at decay scale a
     b = -np.log(epsilon) / a
-    return 1 + (k - 1) * np.exp(-b * x)
+    # Shifted exponential decay toward asymptote
+    return c + (k - c) * np.exp(-b * x)
 
 
 @dataclass 
@@ -600,6 +602,8 @@ class MillipedeInputDataExperimentalGroup:
                                                        K_baseline=design_matrix_processing_specification.K_baseline, 
                                                        a_parameter_enriched=design_matrix_processing_specification.a_parameter_enriched,
                                                        a_parameter_baseline=design_matrix_processing_specification.a_parameter_baseline,
+                                                       c_parameter_enriched=design_matrix_processing_specification.c_parameter_enriched,
+                                                       c_parameter_baseline=design_matrix_processing_specification.c_parameter_baseline,
                                                        set_offset_as_default=design_matrix_processing_specification.set_offset_as_default,
                                                        set_offset_as_total_reads=design_matrix_processing_specification.set_offset_as_total_reads,
                                                        set_offset_as_enriched=design_matrix_processing_specification.set_offset_as_enriched,
@@ -809,6 +813,8 @@ class MillipedeInputDataExperimentalGroup:
                                  K_baseline: Union[float, List[float], List[List[float]]],
                                  a_parameter_enriched: Union[float, List[float], List[List[float]]],
                                  a_parameter_baseline: Union[float, List[float], List[List[float]]],
+                                 c_parameter_enriched: Union[float, List[float], List[List[float]]],
+                                 c_parameter_baseline: Union[float, List[float], List[List[float]]],
                                  set_offset_as_default: bool,
                                  set_offset_as_total_reads: bool,
                                  set_offset_as_enriched: bool,
@@ -863,19 +869,21 @@ class MillipedeInputDataExperimentalGroup:
         #if 'scale_factor' not in encoding_df.columns: 
             #encoding_df['scale_factor'] = 1.0 / np.sqrt(encoding_df['total_reads']) # NOTE: Intentionally keeping the total_reads as the raw to avoid being impact by normalization - this could be subject to change
         if 'scale_factor' not in encoding_df.columns:
-            def set_scale_factor(input_encoding_df, K_enriched_selected, K_baseline_selected, a_parameter_enriched_selected, a_parameter_baseline_selected):
+            def set_scale_factor(input_encoding_df, K_enriched_selected, K_baseline_selected, a_parameter_enriched_selected, a_parameter_baseline_selected, c_parameter_enriched_selected, c_parameter_baseline_selected):
                 input_encoding_df["K_enriched"] = K_enriched_selected
                 input_encoding_df["K_baseline"] = K_baseline_selected
                 input_encoding_df["a_parameter_enriched"] = a_parameter_enriched_selected
                 input_encoding_df["a_parameter_baseline"] = a_parameter_baseline_selected
+                input_encoding_df["c_parameter_enriched"] = c_parameter_enriched_selected
+                input_encoding_df["c_parameter_baseline"] = c_parameter_baseline_selected
                 if sigma_scale_normalized:
                     if decay_sigma_scale:
-                        input_encoding_df['scale_factor'] = ((decay_function(input_encoding_df[enriched_pop_df_reads_colname], K_enriched_selected, a_parameter_enriched_selected))  + (decay_function(input_encoding_df[baseline_pop_df_reads_colname], K_baseline_selected, a_parameter_baseline_selected)))/2 
+                        input_encoding_df['scale_factor'] = ((decay_function(input_encoding_df[enriched_pop_df_reads_colname], K_enriched_selected, a_parameter_enriched_selected, c_parameter_enriched_selected))  + (decay_function(input_encoding_df[baseline_pop_df_reads_colname], K_baseline_selected, a_parameter_baseline_selected, c_parameter_baseline_selected)))/2 
                     else:
                         input_encoding_df['scale_factor'] = (K_enriched_selected / np.sqrt(input_encoding_df[enriched_pop_df_reads_colname])) + (input_encoding_df / np.sqrt(input_encoding_df[baseline_pop_df_reads_colname]))
                 else:
                     if decay_sigma_scale:
-                        input_encoding_df['scale_factor'] = ((decay_function(input_encoding_df[enriched_pop_df_reads_colname + "_raw"], K_enriched_selected, a_parameter_enriched_selected)) + (decay_function(input_encoding_df[baseline_pop_df_reads_colname + "_raw"], K_baseline_selected, a_parameter_baseline_selected)))/2 
+                        input_encoding_df['scale_factor'] = ((decay_function(input_encoding_df[enriched_pop_df_reads_colname + "_raw"], K_enriched_selected, a_parameter_enriched_selected, c_parameter_enriched_selected)) + (decay_function(input_encoding_df[baseline_pop_df_reads_colname + "_raw"], K_baseline_selected, a_parameter_baseline_selected, c_parameter_baseline_selected)))/2 
                     else:
                         input_encoding_df['scale_factor'] = (K_enriched_selected / np.sqrt(input_encoding_df[enriched_pop_df_reads_colname + "_raw"])) + (K_baseline_selected / np.sqrt(input_encoding_df[baseline_pop_df_reads_colname + "_raw"]))
                 return input_encoding_df
@@ -906,10 +914,13 @@ class MillipedeInputDataExperimentalGroup:
                     K_baseline_selected = retrieve_sample_parameter(K_baseline, experiment_index=exp_index, replicate_index=rep_index)
                     a_parameter_enriched_selected = retrieve_sample_parameter(a_parameter_enriched, experiment_index=exp_index, replicate_index=rep_index)
                     a_parameter_baseline_selected = retrieve_sample_parameter(a_parameter_baseline, experiment_index=exp_index, replicate_index=rep_index)
+                    c_parameter_enriched_selected = retrieve_sample_parameter(c_parameter_enriched, experiment_index=exp_index, replicate_index=rep_index)
+                    c_parameter_baseline_selected = retrieve_sample_parameter(c_parameter_baseline, experiment_index=exp_index, replicate_index=rep_index)
 
                     # Subset the encoding by the intercept index and add scale factor
                     sample_encoding_df = encoding_df[encoding_df[intercept_col] == 1]
-                    sample_encoding_df = set_scale_factor(sample_encoding_df, K_enriched_selected=K_enriched_selected, K_baseline_selected=K_baseline_selected, a_parameter_enriched_selected=a_parameter_enriched_selected, a_parameter_baseline_selected=a_parameter_baseline_selected)
+                    sample_encoding_df = set_scale_factor(sample_encoding_df, K_enriched_selected=K_enriched_selected, K_baseline_selected=K_baseline_selected, a_parameter_enriched_selected=a_parameter_enriched_selected, a_parameter_baseline_selected=a_parameter_baseline_selected,
+                    c_parameter_enriched_selected=c_parameter_enriched_selected, c_parameter_baseline_selected=c_parameter_baseline_selected)
                     sample_encoding_df_list.append(sample_encoding_df)
                 
                 # Concatenate all the updated sample encoding DFs into the complete encoding DF
@@ -919,21 +930,28 @@ class MillipedeInputDataExperimentalGroup:
                 if replicate_i is None:
                     if experiment_i is None:
                         # If no explicit experiment or replicate index is provided, then expecting a single sigma_scale parameter but must assert the input first
-                        assert isinstance(K_enriched, (int, float)), f"K_enriched {K_enriched} and all sigma_scale_parameters (K_enriched, K_baseline, a_parameter_enriched, a_parameter_baseline) must be an int/float type"
-                        assert isinstance(K_baseline, (int, float)), f"K_baseline {K_baseline} and all sigma_scale_parameters (K_enriched, K_baseline, a_parameter_enriched, a_parameter_baseline) must be an int/float type"
-                        assert isinstance(a_parameter_enriched, (int, float)), f"a_parameter {a_parameter_enriched} and all sigma_scale_parameters (K_enriched, K_baseline, a_parameter_enriched, a_parameter_baseline) must be an int/float type"
-                        assert isinstance(a_parameter_baseline, (int, float)), f"a_parameter {a_parameter_baseline} and all sigma_scale_parameters (K_enriched, K_baseline, a_parameter_enriched, a_parameter_baseline) must be an int/float type"
+                        assert isinstance(K_enriched, (int, float)), f"K_enriched {K_enriched} and all sigma_scale_parameters (K_enriched, K_baseline, a_parameter_enriched, a_parameter_baseline, c_parameter_enriched, c_parameter_baseline) must be an int/float type"
+                        assert isinstance(K_baseline, (int, float)), f"K_baseline {K_baseline} and all sigma_scale_parameters (K_enriched, K_baseline, a_parameter_enriched, a_parameter_baseline, c_parameter_enriched, c_parameter_baseline) must be an int/float type"
+                        assert isinstance(a_parameter_enriched, (int, float)), f"a_parameter {a_parameter_enriched} and all sigma_scale_parameters (K_enriched, K_baseline, a_parameter_enriched, a_parameter_baseline, c_parameter_enriched, c_parameter_baseline) must be an int/float type"
+                        assert isinstance(a_parameter_baseline, (int, float)), f"a_parameter {a_parameter_baseline} and all sigma_scale_parameters (K_enriched, K_baseline, a_parameter_enriched, a_parameter_baseline, c_parameter_enriched, c_parameter_baseline) must be an int/float type"
+                        assert isinstance(c_parameter_enriched, (int, float)), f"c_parameter {c_parameter_enriched} and all sigma_scale_parameters (K_enriched, K_baseline, a_parameter_enriched, a_parameter_baseline, c_parameter_enriched, c_parameter_baseline) must be an int/float type"
+                        assert isinstance(c_parameter_baseline, (int, float)), f"c_parameter {c_parameter_baseline} and all sigma_scale_parameters (K_enriched, K_baseline, a_parameter_enriched, a_parameter_baseline, c_parameter_enriched, c_parameter_baseline) must be an int/float type"
                         K_enriched_selected = K_enriched
                         K_baseline_selected = K_baseline
                         a_parameter_enriched_selected = a_parameter_enriched
                         a_parameter_baseline_selected = a_parameter_baseline
+                        c_parameter_enriched_selected = c_parameter_enriched
+                        c_parameter_baseline_selected = c_parameter_baseline
                 else:
                     # If replicate (and experiment) index is provided, get the selected sigma_scale parameters
                     K_enriched_selected = retrieve_sample_parameter(K_enriched, experiment_i, replicate_i)
                     K_baseline_selected = retrieve_sample_parameter(K_baseline, experiment_i, replicate_i)
                     a_parameter_enriched_selected = retrieve_sample_parameter(a_parameter_enriched, experiment_i, replicate_i)
                     a_parameter_baseline_selected = retrieve_sample_parameter(a_parameter_baseline, experiment_i, replicate_i)
-                encoding_df = set_scale_factor(encoding_df, K_enriched_selected=K_enriched_selected, K_baseline_selected=K_baseline_selected, a_parameter_enriched_selected=a_parameter_enriched_selected, a_parameter_baseline_selected=a_parameter_baseline_selected)
+                    c_parameter_enriched_selected = retrieve_sample_parameter(c_parameter_enriched, experiment_i, replicate_i)
+                    c_parameter_baseline_selected = retrieve_sample_parameter(c_parameter_baseline, experiment_i, replicate_i)
+                encoding_df = set_scale_factor(encoding_df, K_enriched_selected=K_enriched_selected, K_baseline_selected=K_baseline_selected, a_parameter_enriched_selected=a_parameter_enriched_selected, a_parameter_baseline_selected=a_parameter_baseline_selected,
+                c_parameter_enriched_selected=c_parameter_enriched_selected, c_parameter_baseline_selected=c_parameter_baseline_selected)
             
         if 'psi0' not in encoding_df.columns:
             if set_offset_as_default:
@@ -1221,11 +1239,16 @@ class RawEncodingDataframesExperimentalGroup:
     
     # TODO set_variables_constructor and read_in_files_constructor will be classmethods as alternative contructors (factor methods) see https://www.programiz.com/python-programming/methods/built-in/classmethod
     # TODO: Reimpliment set_variables_constructor based on new input arguments from read_in_files_constructor
-    def set_variables_constructor(self, enriched_pop_encodings_df_list: List[pd.DataFrame], baseline_pop_encodings_df_list: List[pd.DataFrame], presort_pop_encodings_df_list: Optional[List[pd.DataFrame]] = None, wt_pop_encodings_df_list: Optional[List[pd.DataFrame]] = None):
-        self.enriched_pop_encodings_df_list = enriched_pop_encodings_df_list
-        self.baseline_pop_encodings_df_list = baseline_pop_encodings_df_list
-        self.presort_pop_encodings_df_list = presort_pop_encodings_df_list
-        self.wt_pop_encodings_df_list = wt_pop_encodings_df_list
+    def set_variables_constructor(self, 
+           enriched_pop_encodings_df_experiment_list: List[List[pd.DataFrame]],
+            baseline_pop_encodings_df_experiment_list: List[List[pd.DataFrame]], 
+            experiment_labels: List[str],
+            presort_pop_encodings_df_experiment_list: Optional[List[pd.DataFrame]] = None, 
+            ctrl_pop_encodings_df_experiment_list: Optional[List[pd.DataFrame]] = None):
+        self.enriched_pop_encodings_df_experiment_list = enriched_pop_encodings_df_experiment_list
+        self.baseline_pop_encodings_df_experiment_list = baseline_pop_encodings_df_experiment_list
+        self.presort_pop_encodings_df_experiment_list = presort_pop_encodings_df_experiment_list
+        self.ctrl_pop_encodings_df_experiment_list = ctrl_pop_encodings_df_experiment_list
         
         self.__post_validate()
         
@@ -1240,7 +1263,7 @@ class RawEncodingDataframesExperimentalGroup:
                                   ctrl_pop_labels: Optional[Union[list, str]]=None,
                                   reps:Optional[List[int]]=None):
                                   
-        self.enriched_pop_fn_encodings_experiment_list = enriched_pop_fn_encodings_experiment_list
+        self.enriched_pop_encodings_df_experiment_list = enriched_pop_fn_encodings_experiment_list
         self.baseline_pop_fn_encodings_experiment_list = baseline_pop_fn_encodings_experiment_list
         self.presort_pop_fn_encodings_experiment_list = presort_pop_fn_encodings_experiment_list
         self.ctrl_pop_fn_encodings = ctrl_pop_fn_encodings
@@ -1422,24 +1445,14 @@ class EncodingEditingFrequenciesExperimentalGroup:
             self.presort_pop_encoding_editing_freq_experiment_list: List[List[pd.Series]] = [[self.__generate_per_position_editing_frequency(encoding_df) for encoding_df in encoding_reps_df] for encoding_reps_df in self.raw_encodings.presort_pop_encodings_df_experiment_list] 
             self.presort_pop_encoding_editing_per_variant_freq_experiment_list: List[List[pd.Series]] = [[self.__generate_per_variant_editing_frequency(encoding_df) for encoding_df in encoding_reps_df] for encoding_reps_df in self.raw_encodings.presort_pop_encodings_df_experiment_list] 
         
-        def generate_per_position_editing_frequency_for_ctrl(sup_ctrl_pop_encodings_df_list: Union[list, pd.DataFrame], editing_frequency_callable: Callable, _depth:int=0, _breadth:int=0) -> Union[list, pd.Series]:
-            if isinstance(sup_ctrl_pop_encodings_df_list, list):
-                sup_ctrl_pop_encoding_editing_freq_list = []
-                for i, sup_ctrl_pop_encodings_df in enumerate(sup_ctrl_pop_encodings_df_list):
-                    sup_ctrl_pop_encoding_editing_freq_list.append(generate_per_position_editing_frequency_for_ctrl(sup_ctrl_pop_encodings_df, _depth=_depth+1, _breadth=i))
-                return sup_ctrl_pop_encoding_editing_freq_list
-            elif isinstance(sup_ctrl_pop_encodings_df_list, pd.DataFrame):
-                return editing_frequency_callable(sup_ctrl_pop_encodings_df_list)
-         
-        
-        
-        self.ctrl_pop_encoding_editing_freq_list = generate_per_position_editing_frequency_for_ctrl(self.raw_encodings.ctrl_pop_encodings_df_list, editing_frequency_callable=self.__generate_per_position_editing_frequency)
-        self.ctrl_pop_encoding_editing_per_variant_freq_list = generate_per_position_editing_frequency_for_ctrl(self.raw_encodings.ctrl_pop_encodings_df_list, editing_frequency_callable=self.__generate_per_variant_editing_frequency)
+        if hasattr(self.raw_encodings, "ctrl_pop_encodings_df_experiment_list"):
+            self.ctrl_pop_encoding_editing_freq_experiment_list: List[List[pd.Series]] = [[self.__generate_per_position_editing_frequency(encoding_df) for encoding_df in encoding_reps_df] for encoding_reps_df in self.raw_encodings.ctrl_pop_encodings_df_experiment_list] 
+            self.ctrl_pop_encoding_editing_per_variant_freq_experiment_list: List[List[pd.Series]] = [[self.__generate_per_variant_editing_frequency(encoding_df) for encoding_df in encoding_reps_df] for encoding_reps_df in self.raw_encodings.ctrl_pop_encodings_df_experiment_list] 
+            
         
         '''
             Calculate average frequency across replicates
         '''
-        
         def generate_editing_freq_avg_dict(editing_freq_experiment_list: List[List[pd.Series]]):
             editing_freq_avg_dict: Mapping[int, Union[List[pd.Series], pd.Series]] = {}
             editing_freq_avg_dict[1] = [sum(editing_freq_list) / len(editing_freq_list) for editing_freq_list in editing_freq_experiment_list]
@@ -1447,10 +1460,8 @@ class EncodingEditingFrequenciesExperimentalGroup:
             editing_freq_avg_dict[0] = sum(flattened_editing_freq_list) / len(flattened_editing_freq_list)
             return editing_freq_avg_dict
         
-        
         self.enriched_pop_encoding_editing_freq_avg = generate_editing_freq_avg_dict(self.enriched_pop_encoding_editing_freq_experiment_list)
         self.enriched_pop_encoding_editing_per_variant_freq_avg = generate_editing_freq_avg_dict(self.enriched_pop_encoding_editing_per_variant_freq_experiment_list)
-        
         
         self.baseline_pop_encoding_editing_freq_avg = generate_editing_freq_avg_dict(self.baseline_pop_encoding_editing_freq_experiment_list)
         self.baseline_pop_encoding_editing_per_variant_freq_avg = generate_editing_freq_avg_dict(self.baseline_pop_encoding_editing_per_variant_freq_experiment_list)
@@ -1459,60 +1470,11 @@ class EncodingEditingFrequenciesExperimentalGroup:
             self.presort_pop_encoding_editing_freq_avg = generate_editing_freq_avg_dict(self.presort_pop_encoding_editing_freq_experiment_list)
             self.presort_pop_encoding_editing_per_variant_freq_avg = generate_editing_freq_avg_dict(self.presort_pop_encoding_editing_per_variant_freq_experiment_list)
             
-        # TODO: This function needs to be tested on several use cases varying the structure of  sup_ctrl_pop_encoding_editing_freq (note 10/22/2022)
-        def calculate_ctrl_pop_encoding_editing_freq_avg(sup_ctrl_pop_encoding_editing_freq: Union[list, pd.Series], ctrl_pop_encoding_editing_freq_avg_level:int, _depth:int=0, _breadth:int=0) -> Union[list, pd.Series]:
-            if isinstance(sup_ctrl_pop_encoding_editing_freq, list):
-                sup_ctrl_pop_encoding_editing_freq_list = []
-                for i, subb_ctrl_pop_encoding_editing_freq in enumerate(sup_ctrl_pop_encoding_editing_freq_list):
-                    sup_ctrl_pop_encoding_editing_freq_list.append(calculate_ctrl_pop_encoding_editing_freq_avg(subb_ctrl_pop_encoding_editing_freq, ctrl_pop_encoding_editing_freq_avg_level, _depth=_depth+1, _breadth=i))
-                
-                # TODO: This function would likely not work if depths are different between different entries in list - would need to implement even a more dynamic way of calculating average - added assertion below to check for this (note 10/22/2022)
-                assert len(sup_ctrl_pop_encoding_editing_freq_list) > 0, "Failed due to empty list in raw_encodings.ctrl_pop_encodings_df_list"
-                if isinstance(sup_ctrl_pop_encoding_editing_freq_list[0], pd.Series):
-                    for subb_ctrl_pop_encoding_editing_freq_list in sup_ctrl_pop_encoding_editing_freq_list:
-                        assert isinstance(subb_ctrl_pop_encoding_editing_freq_list, pd.Series), "raw_encodings.ctrl_pop_encodings_df_list must be perfectly height balanced, if your control sample design is inherently not height balanced, contact the developers to modify package"
-                    # Do nothing, already in correct format (likely the second-to-last depth level, or the average was calculated a level down)
-                else:
-                    sup_ctrl_pop_encoding_editing_freq_list = [subb_subb_ctrl_pop_encoding_editing_freq for subb_ctrl_pop_encoding_editing_freq in sup_ctrl_pop_encoding_editing_freq_list for subb_subb_ctrl_pop_encoding_editing_freq in subb_ctrl_pop_encoding_editing_freq]
-                
-                if _depth == ctrl_pop_encoding_editing_freq_avg_level:
-                    # Depth is at the level of the specified level, thus calculate the average
-                    sup_ctrl_pop_encoding_editing_freq_avg = sum(sup_ctrl_pop_encoding_editing_freq_list) / len(sup_ctrl_pop_encoding_editing_freq_list)
-                    return sup_ctrl_pop_encoding_editing_freq_avg
-                return 
-            elif isinstance(sup_ctrl_pop_encoding_editing_freq, pd.Series):
-                if _depth == ctrl_pop_encoding_editing_freq_avg_level:
-                    print("ctrl_pop_encoding_editing_freq_avg_level was set to max depth of ctrl_pop_encodings_df_list, so no average was calculated")
-                    return sup_ctrl_pop_encoding_editing_freq
-                elif _depth > ctrl_pop_encoding_editing_freq_avg_level:
-                    # Nothing to do but pass up the freq series
-                    return sup_ctrl_pop_encoding_editing_freq
-                elif _depth < ctrl_pop_encoding_editing_freq_avg_level:
-                    raise Exception("ctrl_pop_encoding_editing_freq_avg_level {} was set higher than max depth of ctrl_pop_encodings_df_list {}, must be lower or equal to max depth".format(ctrl_pop_encoding_editing_freq_avg_level, _depth))
         
-        # TODO: This function needs to be tested on several use cases varying the structure of  sup_ctrl_pop_encoding_editing_freq (note 10/22/2022)
-        def get_max_depth_of_ctrl_pop_encoding_editing_freq(sup_ctrl_pop_encoding_editing_freq: Union[list, pd.Series], _depth:int=0, _breadth:int=0) -> int:
-            if isinstance(sup_ctrl_pop_encoding_editing_freq, list):
-                sup_ctrl_pop_encoding_editing_freq_list = []
-                for i, subb_ctrl_pop_encoding_editing_freq in enumerate(sup_ctrl_pop_encoding_editing_freq_list):
-                    sup_ctrl_pop_encoding_editing_freq_list.append(calculate_ctrl_pop_encoding_editing_freq_avg(subb_ctrl_pop_encoding_editing_freq, ctrl_pop_encoding_editing_freq_avg_level, _depth=_depth+1, _breadth=i))
-                return max(sup_ctrl_pop_encoding_editing_freq_list)
-            elif isinstance(sup_ctrl_pop_encoding_editing_freq, pd.Series):
-                return _depth
-        
-        if hasattr(self, "ctrl_pop_encoding_editing_freq_list"):
-            max_depth: int=get_max_depth_of_ctrl_pop_encoding_editing_freq(self.ctrl_pop_encoding_editing_freq_list)
-            
-            ctrl_pop_encoding_editing_freq_avg: Mapping[int, Union[list, pd.Series]] = {}
-            for level in range(max_depth+1):
-                ctrl_pop_encoding_editing_freq_avg[level] = calculate_ctrl_pop_encoding_editing_freq_avg(self.ctrl_pop_encoding_editing_freq_list, ctrl_pop_encoding_editing_freq_avg_level=level)
-            self.ctrl_pop_encoding_editing_freq_avg = ctrl_pop_encoding_editing_freq_avg
-            
-            ctrl_pop_encoding_editing_per_variant_freq_avg: Mapping[int, Union[list, pd.Series]] = {}
-            for level in range(max_depth+1):
-                ctrl_pop_encoding_editing_per_variant_freq_avg[level] = calculate_ctrl_pop_encoding_editing_freq_avg(self.ctrl_pop_encoding_editing_per_variant_freq_list, ctrl_pop_encoding_editing_freq_avg_level=level)
-            self.ctrl_pop_encoding_editing_per_variant_freq_avg = ctrl_pop_encoding_editing_per_variant_freq_avg
-            
+        if hasattr(self, "ctrl_pop_encodings_df_experiment_list"):
+            self.ctrl_pop_encoding_editing_freq_avg = generate_editing_freq_avg_dict(self.ctrl_pop_encoding_editing_freq_experiment_list)
+            self.ctrl_pop_encoding_editing_per_variant_freq_avg = generate_editing_freq_avg_dict(self.ctrl_pop_encoding_editing_per_variant_freq_experiment_list)
+
         self.__validated = True
     
     def __generate_per_position_editing_frequency(self, encoding_df: pd.DataFrame) -> pd.Series:

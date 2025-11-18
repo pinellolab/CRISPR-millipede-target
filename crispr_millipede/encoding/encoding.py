@@ -291,7 +291,7 @@ class EncodingDataFrames:
                     biological_replicate_allele_table = sum_technical_replicate_allele_tables([read_allele_table(technical_replicate_fn) for technical_replicate_fn in biological_replicate_input])
                     population_baseline_df.append(biological_replicate_allele_table)
                 else:
-                    biological_replicate_allele_table = read_allele_table(fn)
+                    biological_replicate_allele_table = read_allele_table(biological_replicate_input)
                     population_baseline_df.append(biological_replicate_allele_table)
             self.population_baseline_df = population_baseline_df
 
@@ -304,7 +304,7 @@ class EncodingDataFrames:
                     biological_replicate_allele_table = sum_technical_replicate_allele_tables([read_allele_table(technical_replicate_fn) for technical_replicate_fn in biological_replicate_input])
                     population_target_df.append(biological_replicate_allele_table)
                 else:
-                    biological_replicate_allele_table = read_allele_table(fn)
+                    biological_replicate_allele_table = read_allele_table(biological_replicate_input)
                     population_target_df.append(biological_replicate_allele_table)
             self.population_target_df = population_target_df
 
@@ -317,7 +317,7 @@ class EncodingDataFrames:
                     biological_replicate_allele_table = sum_technical_replicate_allele_tables([read_allele_table(technical_replicate_fn) for technical_replicate_fn in biological_replicate_input])
                     population_presort_df.append(biological_replicate_allele_table)
                 else:
-                    biological_replicate_allele_table = read_allele_table(fn)
+                    biological_replicate_allele_table = read_allele_table(biological_replicate_input)
                     population_presort_df.append(biological_replicate_allele_table)
             self.population_presort_df = population_presort_df
 
@@ -330,7 +330,7 @@ class EncodingDataFrames:
                     biological_replicate_allele_table = sum_technical_replicate_allele_tables([read_allele_table(technical_replicate_fn) for technical_replicate_fn in biological_replicate_input])
                     population_wt_df.append(biological_replicate_allele_table)
                 else:
-                    biological_replicate_allele_table = read_allele_table(fn)
+                    biological_replicate_allele_table = read_allele_table(biological_replicate_input)
                     population_wt_df.append(biological_replicate_allele_table)
             self.population_wt_df = population_wt_df
 

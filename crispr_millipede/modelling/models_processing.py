@@ -1,4 +1,5 @@
 import numpy as np
+from scipy.optimize import curve_fit
 import torch
 from millipede import NormalLikelihoodVariableSelector
 from millipede import BinomialLikelihoodVariableSelector
@@ -28,6 +29,94 @@ def decay_function(x, k, a, c=1.0, epsilon=0.01):
     # Shifted exponential decay toward asymptote
     return c + (k - c) * np.exp(-b * x)
 
+def decay_function_2d(enriched_count, baseline_count, A_2d_parameter, k_enriched_2d_parameter, k_baseline_2d_parameter, C_2d_parameter):
+    """
+    Evaluate the fitted 2D exponential decay surface at one point (x, y).
+
+    Parameters
+    ----------
+    x : float
+        Enriched read depth (binned or raw)
+    y : float
+        Baseline read depth (binned or raw)
+    A_2d_parameter, k_enriched_2d_parameter, k_baseline_2d_parameter, C_2d_parameter : floats
+        Parameters returned from the 2D model fit.
+
+    Returns
+    -------
+    float : decay value (analogous to your previous 1D decay function)
+    """
+    return A_2d_parameter * np.exp((-k_enriched_2d_parameter * enriched_count) - (k_baseline_2d_parameter * baseline_count)) + C_2d_parameter
+
+def __normalize_counts(encoding_df: pd.DataFrame,
+                          enriched_pop_df_reads_colname: str,
+                          baseline_pop_df_reads_colname: str,
+                          nucleotide_ids: List[str],
+                          wt_normalization: bool,
+                          total_normalization: bool,
+                          presort_pop_df_reads_colname: Optional[str]=None) -> pd.DataFrame:
+        # TODO 5/15/23: Normalization is set to True always! Make it an input variable. Also, it should directly change the count rather than just the score
+        # TODO 5/15/23: Also, allow normalization either by library size or by WT reads. For now, will just do WT reads
+        
+        # Original
+        enriched_read_counts = encoding_df[enriched_pop_df_reads_colname]
+        baseline_read_counts = encoding_df[baseline_pop_df_reads_colname]
+        
+        if presort_pop_df_reads_colname is not None:
+            presort_read_counts = encoding_df[presort_pop_df_reads_colname]
+        # IMPORTANT NOTE 5/15/23: Not updated the total_reads column since this column is used for the sigma_scale_factor
+        
+        # Perform normalization based on WT allele count
+        if wt_normalization:
+            wt_allele_df = encoding_df[encoding_df[nucleotide_ids].sum(axis=1) == 0]
+            assert wt_allele_df.shape[0] == 1, f"No single WT allele present in encoding DF of shape {wt_allele_df.shape}"
+
+            wt_enriched_read_count = wt_allele_df[enriched_pop_df_reads_colname][0]
+            wt_baseline_read_count = wt_allele_df[baseline_pop_df_reads_colname][0]
+                
+            
+            enriched_read_counts = enriched_read_counts * (wt_baseline_read_count / wt_enriched_read_count)
+            baseline_read_counts = baseline_read_counts
+            
+            # Keep raw counts: 
+            encoding_df[enriched_pop_df_reads_colname + "_raw"] = encoding_df[enriched_pop_df_reads_colname]
+            encoding_df[baseline_pop_df_reads_colname + "_raw"] = encoding_df[baseline_pop_df_reads_colname]
+
+            encoding_df[enriched_pop_df_reads_colname] = enriched_read_counts
+            encoding_df[baseline_pop_df_reads_colname] = baseline_read_counts
+
+            if presort_pop_df_reads_colname is not None:
+                wt_presort_read_count = wt_allele_df[presort_pop_df_reads_colname][0]
+                presort_read_counts = presort_read_counts * (wt_baseline_read_count / wt_presort_read_count)
+                encoding_df[presort_pop_df_reads_colname + "_raw"] = encoding_df[presort_pop_df_reads_colname]
+                encoding_df[presort_pop_df_reads_colname] = presort_read_counts
+        
+        elif total_normalization:  
+            total_enriched_read_count = sum(enriched_read_counts)
+            total_baseline_read_count = sum(baseline_read_counts)
+            
+            enriched_read_counts = enriched_read_counts / total_enriched_read_count
+            baseline_read_counts = baseline_read_counts / total_baseline_read_count
+            
+            # Keep raw counts:
+            encoding_df[enriched_pop_df_reads_colname + "_raw"] = encoding_df[enriched_pop_df_reads_colname]
+            encoding_df[baseline_pop_df_reads_colname + "_raw"] = encoding_df[baseline_pop_df_reads_colname]
+            
+            encoding_df[enriched_pop_df_reads_colname] = enriched_read_counts
+            encoding_df[baseline_pop_df_reads_colname] = baseline_read_counts
+
+            if presort_pop_df_reads_colname is not None:
+                total_presort_read_count = sum(presort_read_counts)
+                presort_read_counts = presort_read_counts / total_presort_read_count
+                encoding_df[presort_pop_df_reads_colname + "_raw"] = encoding_df[presort_pop_df_reads_colname]
+                encoding_df[presort_pop_df_reads_colname] = presort_read_counts
+        else:
+            encoding_df[enriched_pop_df_reads_colname + "_raw"] = encoding_df[enriched_pop_df_reads_colname]
+            encoding_df[baseline_pop_df_reads_colname + "_raw"] = encoding_df[baseline_pop_df_reads_colname]
+            if presort_pop_df_reads_colname is not None:
+                encoding_df[presort_pop_df_reads_colname + "_raw"] = encoding_df[presort_pop_df_reads_colname]
+        # TODO 20240808: Implement size factor normalization - Zain has code
+        return encoding_df
 
 @dataclass 
 class MillipedeInputDataLoader:
@@ -192,44 +281,364 @@ class MillipedeInputDataLoader:
             merged_df_experiment_list.append(merged_df)
         return merged_df_experiment_list
         
-    def plot_binned_reads_by_score_standard_deviation(self, ymax = 500, bin_width = 10, figsize_width = 12, figsize_height = 10) -> List[List[pd.DataFrame]]:
-        unprocessed_merged_experiment_df_list_copy=[]
+
+    def plot_binned_reads_by_score_standard_deviation(
+            self, ymax=500, bin_width=10, figsize_width=12, figsize_height=10
+        ):
+
+        # -----------------------------------------------------------
+        # Helper: compute mean(|score|), n, SE per bin
+        # -----------------------------------------------------------
+        def compute_mean_abs_error(df, bin_col):
+            grouped = df.groupby(bin_col)['score']
+            mean_abs = grouped.apply(lambda x: np.mean(np.abs(x)))
+            n = grouped.size()
+            se = mean_abs / np.sqrt(n)
+            return pd.DataFrame({
+                bin_col: mean_abs.index,
+                "mean_abs": mean_abs.values,
+                "n": n.values,
+                "se": se.values
+            })
+
+        # -----------------------------------------------------------
+        # Helper: xtick labels "(n=123) 0–10"
+        # -----------------------------------------------------------
+        def make_xticklabels_with_n(interval_index, n_values):
+            labels = []
+            for interval, n in zip(interval_index.astype(str), n_values):
+                clean = interval.replace("(", "").replace("]", "")
+                L, R = clean.split(",")
+                labels.append(f"(n={n}) {L.strip()}–{R.strip()}")
+            return labels
+
+        # -----------------------------------------------------------
+        # Fit using binned midpoints → returns x_fit, y_fit, params
+        # -----------------------------------------------------------
+        def exp_decay_fit_binned(x_bins, y_bins, n_bins, cap_percentile=90):
+            mask = (~np.isnan(x_bins)) & (~np.isnan(y_bins))
+            x = x_bins[mask]
+            y = y_bins[mask]
+            w = n_bins[mask]
+
+            # cap dominating bins
+            cap = np.percentile(w, cap_percentile)
+            w = np.minimum(w, cap)
+
+            sigma = 1 / np.sqrt(w)
+
+            # model is A exp(-B x) + C
+            def model(x, A, B, C):
+                return A * np.exp(-B * x) + C
+
+            try:
+                popt, _ = curve_fit(
+                    model, x, y,
+                    sigma=sigma,
+                    absolute_sigma=True,
+                    bounds=(0, np.inf),
+                    maxfev=20000
+                )
+                return x, model(x, *popt), popt
+            except RuntimeError:
+                return x, y, (np.nan, np.nan, np.nan)
+
+        # -----------------------------------------------------------
+        # Convert (A, B, C) → (k, a, c)
+        # -----------------------------------------------------------
+        def convert_params(popt, epsilon=0.01):
+            A, B, C = popt
+            if np.any(np.isnan(popt)):
+                return np.nan, np.nan, np.nan
+            a = -np.log(epsilon) / B if B > 0 else np.nan
+            k = A + C
+            c = C
+            return k, a, c
+
+        # -----------------------------------------------------------
+        # STORAGE: nested experiment × replicate lists
+        # -----------------------------------------------------------
+        k_parameter_enriched = []
+        a_parameter_enriched = []
+        c_parameter_enriched = []
+
+        k_parameter_baseline = []
+        a_parameter_baseline = []
+        c_parameter_baseline = []
+
+        # -----------------------------------------------------------
+        # MAIN LOOP
+        # -----------------------------------------------------------
+        unprocessed_merged_experiment_df_list_copy = []
+
         for experiment_i, unprocessed_exp_merged_rep_df_list in enumerate(self.unprocessed_merged_experiment_df_list):
+
+            # Start lists for this experiment
+            k_parameter_enriched.append([])
+            a_parameter_enriched.append([])
+            c_parameter_enriched.append([])
+
+            k_parameter_baseline.append([])
+            a_parameter_baseline.append([])
+            c_parameter_baseline.append([])
+
             unprocessed_exp_merged_rep_df_list_copy = []
-            for replicate_i, unprocessed_merged_exp_rep_df in enumerate(unprocessed_exp_merged_rep_df_list):
-                unprocessed_merged_exp_rep_df_copy = unprocessed_merged_exp_rep_df.copy()
-                enriched_read_counts = unprocessed_merged_exp_rep_df_copy[self.enriched_pop_df_reads_colname]
-                baseline_read_counts = unprocessed_merged_exp_rep_df_copy[self.baseline_pop_df_reads_colname]
-                unprocessed_merged_exp_rep_df_copy["score"] = (enriched_read_counts - baseline_read_counts) / (enriched_read_counts + baseline_read_counts) 
-                bins = np.arange(0, ymax, bin_width)  # Create bins from 0 to 0.005 with the specified width
 
-                unprocessed_merged_exp_rep_df_copy['enriched_bins'] = pd.cut(enriched_read_counts, bins)
-                unprocessed_merged_exp_rep_df_copy['baseline_bins'] = pd.cut(baseline_read_counts, bins)
+            for replicate_i, df_raw in enumerate(unprocessed_exp_merged_rep_df_list):
 
-                # Compute standard deviation for each bin
-                enriched_std_per_bin = unprocessed_merged_exp_rep_df_copy.groupby('enriched_bins')['score'].std().reset_index()
-                baseline_std_per_bin = unprocessed_merged_exp_rep_df_copy.groupby('baseline_bins')['score'].std().reset_index()
+                df = df_raw.copy()
+                nt_columns = [col for col in df.columns if ">" in col]
 
-                # Plotting
-                fig, axes = plt.subplots(2,1, figsize=(figsize_width, figsize_height))
-                plt.subplots_adjust(hspace=0.4)
-                axes[0].bar(enriched_std_per_bin['enriched_bins'].astype(str), enriched_std_per_bin['score'], width=0.8)
-                axes[0].set_xlabel(f'Bins of {self.enriched_pop_df_reads_colname}')
-                axes[0].set_ylabel('Standard deviation of score')
-                axes[0].set_title(f'Standard deviation of score across bins of {self.enriched_pop_df_reads_colname} for experiment {experiment_i} and replicate {replicate_i}', fontsize=12)
-                axes[0].set_xticklabels(axes[0].get_xticklabels(), rotation=45, ha='right', fontsize=6)
+                # normalize reads
+                df_norm = __normalize_counts(
+                    df,
+                    self.enriched_pop_df_reads_colname,
+                    self.baseline_pop_df_reads_colname,
+                    nt_columns,
+                    True,
+                    False
+                )
 
-                axes[1].bar(baseline_std_per_bin['baseline_bins'].astype(str), baseline_std_per_bin['score'], width=0.8)
-                axes[1].set_xlabel(f'Bins of {self.baseline_pop_df_reads_colname}')
-                axes[1].set_ylabel('Standard deviation of score')
-                axes[1].set_title(f'Standard deviation of score across bins of {self.baseline_pop_df_reads_colname} for experiment {experiment_i} and replicate {replicate_i}', fontsize=12)
-                axes[1].set_xticklabels(axes[1].get_xticklabels(), rotation=45, ha='right', fontsize=6)
+                enr_raw = df[self.enriched_pop_df_reads_colname + "_raw"]
+                bas_raw = df[self.baseline_pop_df_reads_colname + "_raw"]
+
+                df_norm["score"] = (
+                    df[self.enriched_pop_df_reads_colname] -
+                    df[self.baseline_pop_df_reads_colname]
+                ) / (
+                    df[self.enriched_pop_df_reads_colname] +
+                    df[self.baseline_pop_df_reads_colname]
+                )
+
+                # binning
+                bins = np.arange(0, ymax, bin_width)
+                df_norm['enriched_bins'] = pd.cut(enr_raw, bins)
+                df_norm['baseline_bins'] = pd.cut(bas_raw, bins)
+
+                enriched_stats = compute_mean_abs_error(df_norm, 'enriched_bins')
+                baseline_stats = compute_mean_abs_error(df_norm, 'baseline_bins')
+
+                enriched_mid = np.array([(iv.left + iv.right)/2 for iv in enriched_stats['enriched_bins']])
+                baseline_mid = np.array([(iv.left + iv.right)/2 for iv in baseline_stats['baseline_bins']])
+
+                # FITTING
+                x_enr_fit, y_enr_fit, enr_params = exp_decay_fit_binned(
+                    enriched_mid,
+                    enriched_stats['mean_abs'].values,
+                    enriched_stats['n'].values
+                )
+                x_bas_fit, y_bas_fit, bas_params = exp_decay_fit_binned(
+                    baseline_mid,
+                    baseline_stats['mean_abs'].values,
+                    baseline_stats['n'].values
+                )
+
+                # SORT FOR PLOTTING
+                enr_idx = np.argsort(x_enr_fit)
+                x_enr_fit, y_enr_fit = x_enr_fit[enr_idx], y_enr_fit[enr_idx]
+
+                bas_idx = np.argsort(x_bas_fit)
+                x_bas_fit, y_bas_fit = x_bas_fit[bas_idx], y_bas_fit[bas_idx]
+
+                # STORE FIT PARAMETERS
+                k_e, a_e, c_e = convert_params(enr_params)
+                k_b, a_b, c_b = convert_params(bas_params)
+
+                k_parameter_enriched[experiment_i].append(k_e)
+                a_parameter_enriched[experiment_i].append(a_e)
+                c_parameter_enriched[experiment_i].append(c_e)
+
+                k_parameter_baseline[experiment_i].append(k_b)
+                a_parameter_baseline[experiment_i].append(a_b)
+                c_parameter_baseline[experiment_i].append(c_b)
+
+                # ---------------------------------------------------
+                # ORIGINAL PLOTTING (UNCHANGED)
+                # ---------------------------------------------------
+                fig, axes = plt.subplots(2, 1, figsize=(figsize_width, figsize_height))
+                plt.subplots_adjust(hspace=0.55)
+
+                # ENR
+                axes[0].errorbar(
+                    enriched_mid,
+                    enriched_stats['mean_abs'],
+                    yerr=enriched_stats['se'],
+                    fmt='o', markersize=4, capsize=3
+                )
+                axes[0].plot(x_enr_fit, y_enr_fit, color='red', linewidth=3)
+                axes[0].set_ylabel("Mean |score|")
+                axes[0].set_title(
+                    f"Smooth monotone decreasing fit (binned) vs {self.enriched_pop_df_reads_colname}\n"
+                    f"Experiment {experiment_i}, Replicate {replicate_i}",
+                    fontsize=12
+                )
+                axes[0].set_xticks(enriched_mid)
+                axes[0].set_xticklabels(
+                    make_xticklabels_with_n(enriched_stats['enriched_bins'], enriched_stats['n']),
+                    rotation=45, ha='right', fontsize=6
+                )
+                axes[0].set_xlim(0, ymax)
+                axes[0].set_ylim(0, 1)
+
+                # BASELINE
+                axes[1].errorbar(
+                    baseline_mid,
+                    baseline_stats['mean_abs'],
+                    yerr=baseline_stats['se'],
+                    fmt='o', markersize=4, capsize=3
+                )
+                axes[1].plot(x_bas_fit, y_bas_fit, color='red', linewidth=3)
+                axes[1].set_ylabel("Mean |score|")
+                axes[1].set_title(
+                    f"Smooth monotone decreasing fit (binned) vs {self.baseline_pop_df_reads_colname}\n"
+                    f"Experiment {experiment_i}, Replicate {replicate_i}",
+                    fontsize=12
+                )
+                axes[1].set_xticks(baseline_mid)
+                axes[1].set_xticklabels(
+                    make_xticklabels_with_n(baseline_stats['baseline_bins'], baseline_stats['n']),
+                    rotation=45, ha='right', fontsize=6
+                )
+                axes[1].set_xlim(0, ymax)
+                axes[1].set_ylim(0, 1)
+
+                plt.show()
+
+                # ---------------------------------------------------
+                # 2D HEATMAP OF mean(|score|) FOR ENRICHED × BASELINE
+                # ---------------------------------------------------
+                heatmap_df = df_norm[['score', 'enriched_bins', 'baseline_bins']].copy()
+                heatmap_df = heatmap_df.dropna(subset=['enriched_bins', 'baseline_bins'])
+
+                pivot = heatmap_df.pivot_table(
+                    index='baseline_bins',
+                    columns='enriched_bins',
+                    values='score',
+                    aggfunc=lambda x: np.std(x)
+                )
+
+                enr_intervals = pivot.columns
+                bas_intervals = pivot.index
+
+                # Midpoints
+                enr_mid_hm = np.array([(iv.left + iv.right)/2 for iv in enr_intervals])
+                bas_mid_hm = np.array([(iv.left + iv.right)/2 for iv in bas_intervals])
+
+                # Edges
+                enr_edges = np.array([iv.left for iv in enr_intervals] + [enr_intervals[-1].right])
+                bas_edges = np.array([iv.left for iv in bas_intervals] + [bas_intervals[-1].right])
+
+                heatmap_vals = pivot.values
+                heatmap_masked = np.ma.masked_invalid(heatmap_vals)
+
+                fig, ax = plt.subplots(figsize=(10, 8))
+
+                cmap = plt.cm.viridis
+                cmap.set_bad(color='white')
+
+                mesh = ax.pcolormesh(
+                    enr_edges,
+                    bas_edges,
+                    heatmap_masked,
+                    cmap=cmap,
+                    shading='auto',
+                    vmax=0.2
+                )
+
+                cbar = plt.colorbar(mesh, ax=ax)
+                cbar.set_label("Mean |score|", fontsize=12)
+
+                ax.set_xlabel(f"{self.enriched_pop_df_reads_colname} (read bin)")
+                ax.set_ylabel(f"{self.baseline_pop_df_reads_colname} (read bin)")
+                ax.set_title(
+                    f"2D binned heatmap of mean |score|\n"
+                    f"Experiment {experiment_i}, Replicate {replicate_i}",
+                    fontsize=14
+                )
 
                 plt.show()
                 
-                unprocessed_exp_merged_rep_df_list_copy.append(unprocessed_merged_exp_rep_df_copy)
+                # midpoints
+                enr_mid_hm = np.array([(iv.left + iv.right)/2 for iv in enr_intervals])
+                bas_mid_hm = np.array([(iv.left + iv.right)/2 for iv in bas_intervals])
+
+                # edges
+                enr_edges = np.array([iv.left for iv in enr_intervals] + [enr_intervals[-1].right])
+                bas_edges = np.array([iv.left for iv in bas_intervals] + [bas_intervals[-1].right])
+
+                # create full grid of std values
+                heatmap_vals_full = np.full((len(bas_mid_hm), len(enr_mid_hm)), np.nan)  # rows = baseline, cols = enriched
+                weights2d_full = np.zeros_like(heatmap_vals_full)
+
+                for i, bi in enumerate(bas_intervals):
+                    for j, ej in enumerate(enr_intervals):
+                        cell = heatmap_df[(heatmap_df['baseline_bins']==bi) & (heatmap_df['enriched_bins']==ej)]
+                        if len(cell) > 0:
+                            heatmap_vals_full[i,j] = np.std(cell['score'])
+                            weights2d_full[i,j] = len(cell)
+
+                # meshgrid for fitting
+                Xf, Yf = np.meshgrid(enr_mid_hm, bas_mid_hm)  # X = enriched, Y = baseline
+
+                Zf = heatmap_vals_full  # rows = Y, cols = X
+                mask_fit = ~np.isnan(Zf)
+                X_fit2d = Xf[mask_fit]
+                Y_fit2d = Yf[mask_fit]
+                Z_fit2d = Zf[mask_fit]
+                sigma2d = 1 / np.sqrt(weights2d_full[mask_fit] + 1e-8)
+
+                # fit 2D exponential
+                def exp2d_model(coords, A, kx, ky, C):
+                    x, y = coords
+                    return A * np.exp(-kx*x - ky*y) + C
+
+                p0 = [np.nanmax(Z_fit2d), 0.01, 0.01, np.nanmin(Z_fit2d)]
+                try:
+                    popt2d, _ = curve_fit(exp2d_model, (X_fit2d, Y_fit2d), Z_fit2d, sigma=sigma2d, p0=p0, maxfev=30000)
+                except RuntimeError:
+                    popt2d = [np.nan]*4
+
+                # evaluate fit on full grid
+                Z_fit_surface = exp2d_model((Xf, Yf), *popt2d)
+
+                # plotting
+                fig, ax = plt.subplots(1, 2, figsize=(14, 6))
+
+                # empirical
+                im0 = ax[0].pcolormesh(enr_edges, bas_edges, Zf, shading='auto', cmap='viridis')
+                ax[0].set_title('Empirical 2D Histogram')
+                ax[0].set_xlabel(f"{self.enriched_pop_df_reads_colname} (read bin)")
+                ax[0].set_ylabel(f"{self.baseline_pop_df_reads_colname} (read bin)")
+                plt.colorbar(im0, ax=ax[0])
+
+                # fitted
+                im1 = ax[1].pcolormesh(enr_edges, bas_edges, Z_fit_surface, shading='auto', cmap='viridis')
+                ax[1].set_title('Fitted 2D Exponential Surface')
+                ax[1].set_xlabel(f"{self.enriched_pop_df_reads_colname} (read bin)")
+                ax[1].set_ylabel(f"{self.baseline_pop_df_reads_colname} (read bin)")
+                plt.colorbar(im1, ax=ax[1])
+
+                plt.show()
+
+
+                unprocessed_exp_merged_rep_df_list_copy.append(df)
+
             unprocessed_merged_experiment_df_list_copy.append(unprocessed_exp_merged_rep_df_list_copy)
-        return unprocessed_merged_experiment_df_list_copy
+
+            
+        return {
+            "k_parameter_enriched": k_parameter_enriched,
+            "a_parameter_enriched": a_parameter_enriched,
+            "c_parameter_enriched": c_parameter_enriched,
+            "k_parameter_baseline": k_parameter_baseline,
+            "a_parameter_baseline": a_parameter_baseline,
+            "c_parameter_baseline": c_parameter_baseline,
+            "A_2d_parameter": popt2d[0],
+            "k_baseline_2d_parameter": popt2d[1],
+            "k_enriched_2d_parameter": popt2d[2],
+            "C_2d_parameter": popt2d[3]
+        }
+
 
         
 # TODO 20221019: Include presort in the filtering, so therefore must also take presort fn as input
@@ -372,7 +781,7 @@ class MillipedeInputDataExperimentalGroup:
                     Perform normalization after filtering
                 '''
                 def normalize_func(merged_exp_rep_df):
-                    merged_exp_rep_normalized_df: pd.DataFrame = self.__normalize_counts(merged_exp_rep_df, millipede_input_data_loader.enriched_pop_df_reads_colname, millipede_input_data_loader.baseline_pop_df_reads_colname, nucleotide_ids, design_matrix_processing_specification.wt_normalization, design_matrix_processing_specification.total_normalization, millipede_input_data_loader.presort_pop_df_reads_colname) 
+                    merged_exp_rep_normalized_df: pd.DataFrame = __normalize_counts(merged_exp_rep_df, millipede_input_data_loader.enriched_pop_df_reads_colname, millipede_input_data_loader.baseline_pop_df_reads_colname, nucleotide_ids, design_matrix_processing_specification.wt_normalization, design_matrix_processing_specification.total_normalization, millipede_input_data_loader.presort_pop_df_reads_colname) 
                     return merged_exp_rep_normalized_df
                 # TODO 20240808 Can implement normalization that requires all replicates "exp_merged_rep_df_list" ie size factors from Zain
                 exp_merged_rep_df_list = [normalize_func(merged_exp_rep_df) for merged_exp_rep_df in exp_merged_rep_df_list]
@@ -598,12 +1007,20 @@ class MillipedeInputDataExperimentalGroup:
                                                        presort_pop_df_reads_colname=millipede_input_data_loader.presort_pop_df_reads_colname,
                                                        sigma_scale_normalized= design_matrix_processing_specification.sigma_scale_normalized,
                                                        decay_sigma_scale= design_matrix_processing_specification.decay_sigma_scale,
+                                                       use_2d_decay_function=design_matrix_processing_specification.use_2d_decay_function,
+                                                       
                                                        K_enriched=design_matrix_processing_specification.K_enriched, 
                                                        K_baseline=design_matrix_processing_specification.K_baseline, 
                                                        a_parameter_enriched=design_matrix_processing_specification.a_parameter_enriched,
                                                        a_parameter_baseline=design_matrix_processing_specification.a_parameter_baseline,
                                                        c_parameter_enriched=design_matrix_processing_specification.c_parameter_enriched,
                                                        c_parameter_baseline=design_matrix_processing_specification.c_parameter_baseline,
+                                                       
+                                                       A_2d_parameter=design_matrix_processing_specification.A_2d_parameter,
+                                                       k_baseline_2d_parameter=design_matrix_processing_specification.k_baseline_2d_parameter,
+                                                       k_enriched_2d_parameter=design_matrix_processing_specification.k_enriched_2d_parameter,
+                                                       C_2d_parameter=design_matrix_processing_specification.C_2d_parameter,
+
                                                        set_offset_as_default=design_matrix_processing_specification.set_offset_as_default,
                                                        set_offset_as_total_reads=design_matrix_processing_specification.set_offset_as_total_reads,
                                                        set_offset_as_enriched=design_matrix_processing_specification.set_offset_as_enriched,
@@ -731,77 +1148,6 @@ class MillipedeInputDataExperimentalGroup:
 
         return millipede_design_matrix_set
 
-    def __normalize_counts(self,
-                          encoding_df: pd.DataFrame,
-                          enriched_pop_df_reads_colname: str,
-                          baseline_pop_df_reads_colname: str,
-                          nucleotide_ids: List[str],
-                          wt_normalization: bool,
-                          total_normalization: bool,
-                          presort_pop_df_reads_colname: Optional[str]=None) -> pd.DataFrame:
-        # TODO 5/15/23: Normalization is set to True always! Make it an input variable. Also, it should directly change the count rather than just the score
-        # TODO 5/15/23: Also, allow normalization either by library size or by WT reads. For now, will just do WT reads
-        
-        # Original
-        enriched_read_counts = encoding_df[enriched_pop_df_reads_colname]
-        baseline_read_counts = encoding_df[baseline_pop_df_reads_colname]
-        
-        if presort_pop_df_reads_colname is not None:
-            presort_read_counts = encoding_df[presort_pop_df_reads_colname]
-        # IMPORTANT NOTE 5/15/23: Not updated the total_reads column since this column is used for the sigma_scale_factor
-        
-        # Perform normalization based on WT allele count
-        if wt_normalization:
-            wt_allele_df = encoding_df[encoding_df[nucleotide_ids].sum(axis=1) == 0]
-            assert wt_allele_df.shape[0] == 1, f"No single WT allele present in encoding DF of shape {wt_allele_df.shape}"
-
-            wt_enriched_read_count = wt_allele_df[enriched_pop_df_reads_colname][0]
-            wt_baseline_read_count = wt_allele_df[baseline_pop_df_reads_colname][0]
-                
-            
-            enriched_read_counts = enriched_read_counts * (wt_baseline_read_count / wt_enriched_read_count)
-            baseline_read_counts = baseline_read_counts
-            
-            # Keep raw counts: 
-            encoding_df[enriched_pop_df_reads_colname + "_raw"] = encoding_df[enriched_pop_df_reads_colname]
-            encoding_df[baseline_pop_df_reads_colname + "_raw"] = encoding_df[baseline_pop_df_reads_colname]
-
-            encoding_df[enriched_pop_df_reads_colname] = enriched_read_counts
-            encoding_df[baseline_pop_df_reads_colname] = baseline_read_counts
-
-            if presort_pop_df_reads_colname is not None:
-                wt_presort_read_count = wt_allele_df[presort_pop_df_reads_colname][0]
-                presort_read_counts = presort_read_counts * (wt_baseline_read_count / wt_presort_read_count)
-                encoding_df[presort_pop_df_reads_colname + "_raw"] = encoding_df[presort_pop_df_reads_colname]
-                encoding_df[presort_pop_df_reads_colname] = presort_read_counts
-        
-        elif total_normalization:  
-            total_enriched_read_count = sum(enriched_read_counts)
-            total_baseline_read_count = sum(baseline_read_counts)
-            
-            enriched_read_counts = enriched_read_counts / total_enriched_read_count
-            baseline_read_counts = baseline_read_counts / total_baseline_read_count
-            
-            # Keep raw counts:
-            encoding_df[enriched_pop_df_reads_colname + "_raw"] = encoding_df[enriched_pop_df_reads_colname]
-            encoding_df[baseline_pop_df_reads_colname + "_raw"] = encoding_df[baseline_pop_df_reads_colname]
-            
-            encoding_df[enriched_pop_df_reads_colname] = enriched_read_counts
-            encoding_df[baseline_pop_df_reads_colname] = baseline_read_counts
-
-            if presort_pop_df_reads_colname is not None:
-                total_presort_read_count = sum(presort_read_counts)
-                presort_read_counts = presort_read_counts / total_presort_read_count
-                encoding_df[presort_pop_df_reads_colname + "_raw"] = encoding_df[presort_pop_df_reads_colname]
-                encoding_df[presort_pop_df_reads_colname] = presort_read_counts
-        else:
-            encoding_df[enriched_pop_df_reads_colname + "_raw"] = encoding_df[enriched_pop_df_reads_colname]
-            encoding_df[baseline_pop_df_reads_colname + "_raw"] = encoding_df[baseline_pop_df_reads_colname]
-            if presort_pop_df_reads_colname is not None:
-                encoding_df[presort_pop_df_reads_colname + "_raw"] = encoding_df[presort_pop_df_reads_colname]
-        # TODO 20240808: Implement size factor normalization - Zain has code
-        return encoding_df
-
     def __add_supporting_columns(self, 
                                  encoding_df: pd.DataFrame, 
                                  enriched_pop_df_reads_colname: str, 
@@ -809,12 +1155,8 @@ class MillipedeInputDataExperimentalGroup:
                                  presort_pop_df_reads_colname: Optional[str],
                                  sigma_scale_normalized: bool,
                                  decay_sigma_scale: bool,
-                                 K_enriched: Union[float, List[float], List[List[float]]],
-                                 K_baseline: Union[float, List[float], List[List[float]]],
-                                 a_parameter_enriched: Union[float, List[float], List[List[float]]],
-                                 a_parameter_baseline: Union[float, List[float], List[List[float]]],
-                                 c_parameter_enriched: Union[float, List[float], List[List[float]]],
-                                 c_parameter_baseline: Union[float, List[float], List[List[float]]],
+                                 use_2d_decay_function: bool,
+                                 
                                  set_offset_as_default: bool,
                                  set_offset_as_total_reads: bool,
                                  set_offset_as_enriched: bool,
@@ -822,6 +1164,19 @@ class MillipedeInputDataExperimentalGroup:
                                  set_offset_as_presort: bool,
                                  offset_normalized: bool,
                                  offset_psuedocount: int,
+
+                                 K_enriched: Union[float, List[float], List[List[float]]] = None,
+                                 K_baseline: Union[float, List[float], List[List[float]]] = None,
+                                 a_parameter_enriched: Union[float, List[float], List[List[float]]] = None,
+                                 a_parameter_baseline: Union[float, List[float], List[List[float]]] = None,
+                                 c_parameter_enriched: Union[float, List[float], List[List[float]]] = None,
+                                 c_parameter_baseline: Union[float, List[float], List[List[float]]] = None,
+
+                                 A_2d_parameter: Union[float, List[float], List[List[float]]] = None,
+                                 k_baseline_2d_parameter: Union[float, List[float], List[List[float]]] = None,
+                                 k_enriched_2d_parameter: Union[float, List[float], List[List[float]]] = None,
+                                 C_2d_parameter: Union[float, List[float], List[List[float]]] = None,
+
                                  experiment_i: Optional[int] = None,
                                  replicate_i: Optional[int] = None
                                 ) -> pd.DataFrame:
@@ -869,27 +1224,71 @@ class MillipedeInputDataExperimentalGroup:
         #if 'scale_factor' not in encoding_df.columns: 
             #encoding_df['scale_factor'] = 1.0 / np.sqrt(encoding_df['total_reads']) # NOTE: Intentionally keeping the total_reads as the raw to avoid being impact by normalization - this could be subject to change
         if 'scale_factor' not in encoding_df.columns:
-            def set_scale_factor(input_encoding_df, K_enriched_selected, K_baseline_selected, a_parameter_enriched_selected, a_parameter_baseline_selected, c_parameter_enriched_selected, c_parameter_baseline_selected):
-                input_encoding_df["K_enriched"] = K_enriched_selected
-                input_encoding_df["K_baseline"] = K_baseline_selected
-                input_encoding_df["a_parameter_enriched"] = a_parameter_enriched_selected
-                input_encoding_df["a_parameter_baseline"] = a_parameter_baseline_selected
-                input_encoding_df["c_parameter_enriched"] = c_parameter_enriched_selected
-                input_encoding_df["c_parameter_baseline"] = c_parameter_baseline_selected
+            
+            def set_scale_factor(
+                input_encoding_df, 
+                use_2d_decay_function,
+                K_enriched_selected=None, 
+                K_baseline_selected=None, 
+                a_parameter_enriched_selected=None, 
+                a_parameter_baseline_selected=None, 
+                c_parameter_enriched_selected=None, 
+                c_parameter_baseline_selected=None,
+                A_2d_parameter_selected=None,
+                k_baseline_2d_parameter_selected=None,
+                k_enriched_2d_parameter_selected=None,
+                C_2d_parameter_selected=None):
+
+                if use_2d_decay_function is True:
+                    input_encoding_df["A_2d_parameter"] = A_2d_parameter_selected
+                    input_encoding_df["k_baseline_2d_parameter"] = k_baseline_2d_parameter_selected
+                    input_encoding_df["k_enriched_2d_parameter"] = k_enriched_2d_parameter_selected
+                    input_encoding_df["C_2d_parameter"] = C_2d_parameter_selected
+               else:
+                    input_encoding_df["K_enriched"] = K_enriched_selected
+                    input_encoding_df["K_baseline"] = K_baseline_selected
+                    input_encoding_df["a_parameter_enriched"] = a_parameter_enriched_selected
+                    input_encoding_df["a_parameter_baseline"] = a_parameter_baseline_selected
+                    input_encoding_df["c_parameter_enriched"] = c_parameter_enriched_selected
+                    input_encoding_df["c_parameter_baseline"] = c_parameter_baseline_selected
+
+
                 if sigma_scale_normalized:
                     if decay_sigma_scale:
-                        input_encoding_df['scale_factor'] = ((decay_function(input_encoding_df[enriched_pop_df_reads_colname], K_enriched_selected, a_parameter_enriched_selected, c_parameter_enriched_selected))  + (decay_function(input_encoding_df[baseline_pop_df_reads_colname], K_baseline_selected, a_parameter_baseline_selected, c_parameter_baseline_selected)))/2 
+                        if use_2d_decay_function is True:
+                            input_encoding_df['scale_factor'] = decay_function_2d(
+                                enriched_count = input_encoding_df[enriched_pop_df_reads_colname],
+                                baseline_count = input_encoding_df[baseline_pop_df_reads_colname],
+                                A_2d_parameter = A_2d_parameter_selected, 
+                                k_enriched_2d_parameter = k_enriched_2d_parameter_selected, 
+                                k_baseline_2d_parameter = k_baseline_2d_parameter_selected, 
+                                C_2d_parameter = C_2d_parameter_selected
+                            )
+                        else:
+                            input_encoding_df['scale_factor'] = ((decay_function(input_encoding_df[enriched_pop_df_reads_colname], K_enriched_selected, a_parameter_enriched_selected, c_parameter_enriched_selected))  + (decay_function(input_encoding_df[baseline_pop_df_reads_colname], K_baseline_selected, a_parameter_baseline_selected, c_parameter_baseline_selected)))/2 
                     else:
                         input_encoding_df['scale_factor'] = (K_enriched_selected / np.sqrt(input_encoding_df[enriched_pop_df_reads_colname])) + (input_encoding_df / np.sqrt(input_encoding_df[baseline_pop_df_reads_colname]))
                 else:
                     if decay_sigma_scale:
-                        input_encoding_df['scale_factor'] = ((decay_function(input_encoding_df[enriched_pop_df_reads_colname + "_raw"], K_enriched_selected, a_parameter_enriched_selected, c_parameter_enriched_selected)) + (decay_function(input_encoding_df[baseline_pop_df_reads_colname + "_raw"], K_baseline_selected, a_parameter_baseline_selected, c_parameter_baseline_selected)))/2 
+                        if use_2d_decay_function is True:
+                            input_encoding_df['scale_factor'] = decay_function_2d(
+                                enriched_count = input_encoding_df[enriched_pop_df_reads_colname + "_raw"],
+                                baseline_count = input_encoding_df[baseline_pop_df_reads_colname + "_raw"],
+                                A_2d_parameter = A_2d_parameter_selected, 
+                                k_enriched_2d_parameter = k_enriched_2d_parameter_selected, 
+                                k_baseline_2d_parameter = k_baseline_2d_parameter_selected, 
+                                C_2d_parameter = C_2d_parameter_selected
+                            )
+                        else:
+                            input_encoding_df['scale_factor'] = ((decay_function(input_encoding_df[enriched_pop_df_reads_colname + "_raw"], K_enriched_selected, a_parameter_enriched_selected, c_parameter_enriched_selected)) + (decay_function(input_encoding_df[baseline_pop_df_reads_colname + "_raw"], K_baseline_selected, a_parameter_baseline_selected, c_parameter_baseline_selected)))/2 
                     else:
                         input_encoding_df['scale_factor'] = (K_enriched_selected / np.sqrt(input_encoding_df[enriched_pop_df_reads_colname + "_raw"])) + (K_baseline_selected / np.sqrt(input_encoding_df[baseline_pop_df_reads_colname + "_raw"]))
                 return input_encoding_df
 
 
             def retrieve_sample_parameter(parameter_input, experiment_index, replicate_index):
+                if parameter_input is None:
+                    return None
                 if type(parameter_input) is list:
                     assert replicate_index is not None, "Replicate index must be provided"
                     if type(parameter_input[0]) is list:
@@ -917,10 +1316,16 @@ class MillipedeInputDataExperimentalGroup:
                     c_parameter_enriched_selected = retrieve_sample_parameter(c_parameter_enriched, experiment_index=exp_index, replicate_index=rep_index)
                     c_parameter_baseline_selected = retrieve_sample_parameter(c_parameter_baseline, experiment_index=exp_index, replicate_index=rep_index)
 
+
+                    A_2d_parameter_selected = retrieve_sample_parameter(A_2d_parameter, experiment_index=exp_index, replicate_index=rep_index)
+                    k_baseline_2d_parameter_selected = retrieve_sample_parameter(k_baseline_2d_parameter, experiment_index=exp_index, replicate_index=rep_index)
+                    k_enriched_2d_parameter_selected = retrieve_sample_parameter(k_enriched_2d_parameter, experiment_index=exp_index, replicate_index=rep_index)
+                    C_2d_parameter_selected = retrieve_sample_parameter(C_2d_parameter, experiment_index=exp_index, replicate_index=rep_index)  
+
                     # Subset the encoding by the intercept index and add scale factor
                     sample_encoding_df = encoding_df[encoding_df[intercept_col] == 1]
-                    sample_encoding_df = set_scale_factor(sample_encoding_df, K_enriched_selected=K_enriched_selected, K_baseline_selected=K_baseline_selected, a_parameter_enriched_selected=a_parameter_enriched_selected, a_parameter_baseline_selected=a_parameter_baseline_selected,
-                    c_parameter_enriched_selected=c_parameter_enriched_selected, c_parameter_baseline_selected=c_parameter_baseline_selected)
+                    sample_encoding_df = set_scale_factor(input_encoding_df=sample_encoding_df, use_2d_decay_function=use_2d_decay_function, K_enriched_selected=K_enriched_selected, K_baseline_selected=K_baseline_selected, a_parameter_enriched_selected=a_parameter_enriched_selected, a_parameter_baseline_selected=a_parameter_baseline_selected,
+                    c_parameter_enriched_selected=c_parameter_enriched_selected, c_parameter_baseline_selected=c_parameter_baseline_selected, A_2d_parameter_selected=A_2d_parameter_selected, k_baseline_2d_parameter_selected=k_baseline_2d_parameter_selected, k_enriched_2d_parameter_selected=k_enriched_2d_parameter_selected, C_2d_parameter_selected=C_2d_parameter_selected)
                     sample_encoding_df_list.append(sample_encoding_df)
                 
                 # Concatenate all the updated sample encoding DFs into the complete encoding DF
@@ -936,12 +1341,21 @@ class MillipedeInputDataExperimentalGroup:
                         assert isinstance(a_parameter_baseline, (int, float)), f"a_parameter {a_parameter_baseline} and all sigma_scale_parameters (K_enriched, K_baseline, a_parameter_enriched, a_parameter_baseline, c_parameter_enriched, c_parameter_baseline) must be an int/float type"
                         assert isinstance(c_parameter_enriched, (int, float)), f"c_parameter {c_parameter_enriched} and all sigma_scale_parameters (K_enriched, K_baseline, a_parameter_enriched, a_parameter_baseline, c_parameter_enriched, c_parameter_baseline) must be an int/float type"
                         assert isinstance(c_parameter_baseline, (int, float)), f"c_parameter {c_parameter_baseline} and all sigma_scale_parameters (K_enriched, K_baseline, a_parameter_enriched, a_parameter_baseline, c_parameter_enriched, c_parameter_baseline) must be an int/float type"
+                        assert isinstance(A_2d_parameter, (int, float)) or (A_2d_parameter is None), f"A_2d_parameter {A_2d_parameter} and all 2d_decay_parameters (A_2d_parameter, k_baseline_2d_parameter, k_enriched_2d_parameter, C_2d_parameter) must be an int/float type or None"
+                        assert isinstance(k_baseline_2d_parameter, (int, float)) or (k_baseline_2d_parameter is None), f"k_baseline_2d_parameter {k_baseline_2d_parameter} and all 2d_decay_parameters (A_2d_parameter, k_baseline_2d_parameter, k_enriched_2d_parameter, C_2d_parameter) must be an int/float type or None"
+                        assert isinstance(k_enriched_2d_parameter, (int, float)) or (k_enriched_2d_parameter is None), f"k_enriched_2d_parameter {k_enriched_2d_parameter} and all 2d_decay_parameters (A_2d_parameter, k_baseline_2d_parameter, k_enriched_2d_parameter, C_2d_parameter) must be an int/float type or None"
+                        assert isinstance(C_2d_parameter, (int, float)) or (C_2d_parameter is None), f"C_2d_parameter {C_2d_parameter} and all 2d_decay_parameters (A_2d_parameter, k_baseline_2d_parameter, k_enriched_2d_parameter, C_2d_parameter) must be an int/float type or None"
+
                         K_enriched_selected = K_enriched
                         K_baseline_selected = K_baseline
                         a_parameter_enriched_selected = a_parameter_enriched
                         a_parameter_baseline_selected = a_parameter_baseline
                         c_parameter_enriched_selected = c_parameter_enriched
                         c_parameter_baseline_selected = c_parameter_baseline
+                        A_2d_parameter_selected = A_2d_parameter
+                        k_baseline_2d_parameter_selected = k_baseline_2d_parameter
+                        k_enriched_2d_parameter_selected = k_enriched_2d_parameter
+                        C_2d_parameter_selected = C_2d_parameter
                 else:
                     # If replicate (and experiment) index is provided, get the selected sigma_scale parameters
                     K_enriched_selected = retrieve_sample_parameter(K_enriched, experiment_i, replicate_i)
@@ -950,8 +1364,14 @@ class MillipedeInputDataExperimentalGroup:
                     a_parameter_baseline_selected = retrieve_sample_parameter(a_parameter_baseline, experiment_i, replicate_i)
                     c_parameter_enriched_selected = retrieve_sample_parameter(c_parameter_enriched, experiment_i, replicate_i)
                     c_parameter_baseline_selected = retrieve_sample_parameter(c_parameter_baseline, experiment_i, replicate_i)
-                encoding_df = set_scale_factor(encoding_df, K_enriched_selected=K_enriched_selected, K_baseline_selected=K_baseline_selected, a_parameter_enriched_selected=a_parameter_enriched_selected, a_parameter_baseline_selected=a_parameter_baseline_selected,
-                c_parameter_enriched_selected=c_parameter_enriched_selected, c_parameter_baseline_selected=c_parameter_baseline_selected)
+                    
+                    A_2d_parameter_selected = retrieve_sample_parameter(A_2d_parameter, experiment_i, replicate_i)
+                    k_baseline_2d_parameter_selected = retrieve_sample_parameter(k_baseline_2d_parameter, experiment_i, replicate_i)
+                    k_enriched_2d_parameter_selected = retrieve_sample_parameter(k_enriched_2d_parameter, experiment_i, replicate_i)
+                    C_2d_parameter_selected = retrieve_sample_parameter(C_2d_parameter, experiment_i, replicate_i)
+
+                encoding_df = set_scale_factor(input_encoding_df=encoding_df, use_2d_decay_function=use_2d_decay_function, K_enriched_selected=K_enriched_selected, K_baseline_selected=K_baseline_selected, a_parameter_enriched_selected=a_parameter_enriched_selected, a_parameter_baseline_selected=a_parameter_baseline_selected,
+                c_parameter_enriched_selected=c_parameter_enriched_selected, c_parameter_baseline_selected=c_parameter_baseline_selected, A_2d_parameter_selected=A_2d_parameter_selected, k_baseline_2d_parameter_selected=k_baseline_2d_parameter_selected, k_enriched_2d_parameter_selected=k_enriched_2d_parameter_selected, C_2d_parameter_selected=C_2d_parameter_selected)
             
         if 'psi0' not in encoding_df.columns:
             if set_offset_as_default:

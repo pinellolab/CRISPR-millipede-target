@@ -7,7 +7,11 @@ from millipede import NegativeBinomialLikelihoodVariableSelector
 import pandas as pd
 import warnings
 import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches
+import seaborn as sns
+import itertools
 import crispr_shrinkage
+
 import logging
 
 from os.path import exists
@@ -1364,7 +1368,7 @@ class MillipedeInputDataExperimentalGroup:
                     a_parameter_baseline_selected = retrieve_sample_parameter(a_parameter_baseline, experiment_i, replicate_i)
                     c_parameter_enriched_selected = retrieve_sample_parameter(c_parameter_enriched, experiment_i, replicate_i)
                     c_parameter_baseline_selected = retrieve_sample_parameter(c_parameter_baseline, experiment_i, replicate_i)
-                    
+
                     A_2d_parameter_selected = retrieve_sample_parameter(A_2d_parameter, experiment_i, replicate_i)
                     k_baseline_2d_parameter_selected = retrieve_sample_parameter(k_baseline_2d_parameter, experiment_i, replicate_i)
                     k_enriched_2d_parameter_selected = retrieve_sample_parameter(k_enriched_2d_parameter, experiment_i, replicate_i)
@@ -1832,6 +1836,159 @@ class RawEncodingDataframesExperimentalGroup:
                     break
             return reps
             #exists(fn), "File not found: " + fn
+
+    
+    def compute_pairwise_correlations(self, read_threshold=0):
+        """
+        Computes Pearson correlation between all samples across populations/replicates.
+        Includes WT controls.
+        Filters out alleles with summed reads (across the pair) < read_threshold.
+        Returns a correlation matrix (pd.DataFrame) and the dictionary of sample Series.
+        """
+        # ============================================================
+        # STEP 1. Extract allele count Series from each sample
+        # ============================================================
+
+        def get_sample_series(df):
+            """
+            Extracts a Series of allele counts indexed by allele_id for one sample.
+            Removes WT (all 0) alleles.
+            """
+            allele_cols = [c for c in df.columns if ">" in c]
+            count_col = [c for c in df.columns if "#Reads" in c][0]
+
+            # Drop WT alleles (all mutation indicators are 0)
+            is_wt = (df[allele_cols] == 0).all(axis=1)
+            df = df.loc[~is_wt].copy()
+
+            # Create allele identifier string (or could use tuple)
+            df["allele_id"] = df[allele_cols].astype(str).agg("".join, axis=1)
+
+            # Group by allele_id in case duplicates exist, and sum counts
+            s = df.groupby("allele_id")[count_col].sum()
+
+            return s
+
+
+        populations = [
+            "baseline_pop_encodings_df_experiment_list",
+            "enriched_pop_encodings_df_experiment_list",
+            "presort_pop_encodings_df_experiment_list",
+            "ctrl_pop_encodings_df_experiment_list",  # ✅ Include WT controls
+        ]
+
+        sample_series_dict = {}
+        for pop in populations:
+            pop_list = getattr(self, pop)
+            for exp_i, exp_reps in enumerate(pop_list):
+                for rep_i, df in enumerate(exp_reps):
+                    label = f"{pop.split('_')[0]}_exp{exp_i}_rep{rep_i}"
+                    s = get_sample_series(df)
+                    sample_series_dict[label] = s
+
+        sample_names = list(sample_series_dict.keys())
+        print(f"Loaded {len(sample_names)} total samples (including WT).")
+        print(f"📈 Computing {len(sample_names)*(len(sample_names)-1)//2} pairwise correlations...\n")
+
+        results = []
+
+        for (a, b) in itertools.combinations(sample_names, 2):
+            s1 = sample_series_dict[a]
+            s2 = sample_series_dict[b]
+
+            # Merge only this pair
+            merged = pd.merge(
+                s1.rename("a"), s2.rename("b"),
+                left_index=True, right_index=True, how="inner"
+            )
+
+            # Apply read threshold filter (sum of both samples)
+            merged["total_reads"] = merged["a"] + merged["b"]
+            merged = merged.loc[merged["total_reads"] >= read_threshold]
+
+            n_alleles = len(merged)
+            corr = np.nan
+            if n_alleles > 1:
+                corr = merged["a"].corr(merged["b"])
+
+            print(f"   {a} ↔ {b}: r={corr:.3f} ({n_alleles} alleles compared after filtering < {read_threshold})")
+            results.append((a, b, corr, n_alleles))
+
+        # Convert results to symmetric DataFrame
+        corr_df = pd.DataFrame(index=sample_names, columns=sample_names, dtype=float)
+        for a, b, r, n in results:
+            corr_df.loc[a, b] = r
+            corr_df.loc[b, a] = r
+        np.fill_diagonal(corr_df.values, 1.0)
+
+        self.corr_df = corr_df
+        self.sample_series_dict = sample_series_dict
+
+    def plot_correlation_heatmap(self, figsize=(9, 9)):
+        """
+        Clustered heatmap with row/col colors for both population and replicate.
+        """
+
+        # --- CLEANING STEP (fix for ValueError) ---
+        corr_df = self.corr_df.copy().astype(float)
+        corr_df = corr_df.replace([np.inf, -np.inf], np.nan)
+        corr_df = corr_df.fillna(0)  # or np.nanmean alternative
+
+        # Define colors for populations
+        pop_colors = {
+            "baseline": "#1f77b4",
+            "enriched": "#2ca02c",
+            "presort": "#d62728",
+            "ctrl": "#ffbb78",  # add WT control color
+        }
+
+        # Define colors for replicates (cycle through 6 for example)
+        replicate_colors = ["#ff7f0e", "#9467bd", "#8c564b", "#e377c2", "#7f7f7f", "#bcbd22"]
+
+        populations = []
+        replicates = []
+
+        for s in corr_df.index:
+            # population
+            pop = next((k for k in pop_colors if k in s), None)
+            populations.append(pop_colors[pop] if pop else "#808080")
+
+            # replicate number
+            import re
+            match = re.search(r"rep(\d+)", s)
+            if match:
+                rep_i = int(match.group(1))
+                replicates.append(replicate_colors[rep_i % len(replicate_colors)])
+            else:
+                replicates.append("#808080")
+
+        # Combine into a DataFrame for seaborn
+        row_colors = pd.DataFrame({
+            "Population": populations,
+            "Replicate": replicates
+        }, index=corr_df.index)
+
+        print(f"\n📊 Plotting clustered heatmap with population + replicate colors (vmin=-1, vmax=1)...")
+
+        g = sns.clustermap(
+            corr_df,
+            cmap="Reds",
+            figsize=figsize,
+            vmin=0.25,
+            vmax=1,
+            linewidths=0.3,
+            row_colors=row_colors,
+            col_colors=row_colors,
+            cbar_kws={"label": "Pearson r"},
+            method="average",
+            metric="correlation",
+        )
+
+        plt.setp(g.ax_heatmap.get_xticklabels(), rotation=90)
+        plt.setp(g.ax_heatmap.get_yticklabels(), rotation=0)
+        plt.show()
+
+
 
 from typing import Callable
 

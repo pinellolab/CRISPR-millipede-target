@@ -137,6 +137,8 @@ class MillipedeInputDataLoader:
                 unprocessed_merged_experiment_df_list.append(unprocessed_exp_merged_rep_df_list)
                 self.unprocessed_merged_experiment_df_list = unprocessed_merged_experiment_df_list
 
+
+
     def plot_replicate_correlation(self) -> List[pd.DataFrame]:
         merged_df_experiment_list: List[pd.DataFrame] = []
         unprocessed_merged_experiment_df_list = self.unprocessed_merged_experiment_df_list
@@ -168,8 +170,8 @@ class MillipedeInputDataLoader:
             num_pairwise_reps = len(self.reps)**2
             fig, axes = plt.subplots(num_pairwise_reps,2, figsize=(12, num_pairwise_reps*6))
             axes_row_i = 0
-            for rep_i in self.reps:
-                for rep_j in self.reps:
+            for rep_i in self.reps[experiment_i]:
+                for rep_j in self.reps[experiment_i]:
                     enriched_rep_i_colname = self.enriched_pop_df_reads_colname + f"_rep{rep_i}"
                     enriched_rep_j_colname = self.enriched_pop_df_reads_colname + f"_rep{rep_j}"
                     baseline_rep_i_colname = self.baseline_pop_df_reads_colname + f"_rep{rep_i}"

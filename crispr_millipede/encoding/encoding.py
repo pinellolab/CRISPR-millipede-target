@@ -13,6 +13,7 @@ def find(s, ch):
 ''' 
     Function to perform substitution encoding
 '''
+# DEPRECATED 20251027 replaced for vectorized to improve speed
 def get_substitution_encoding(aligned_sequence, original_seq, skip_index=0):
     assert len(aligned_sequence) == len(original_seq) # Ensure the aligned sequence (from allele table) is equal size to the reference sequence
     
@@ -56,12 +57,13 @@ def get_substitution_encoding(aligned_sequence, original_seq, skip_index=0):
     encodings_per_position_series = pd.Series(encodings_per_position_list, index = index, name="encoding")
     return encodings_per_position_series
 
-
+# DEPRECATED 20251027
 '''
     For a particular row in the CRISPResso table, take the encoding
     
     Removed arguments: encoding
 '''
+# DEPRECATED 20251027 replaced for vectorized to improve speed
 def parse_row(row, original_seq):
     aligned_sequence = row["Aligned_Sequence"]
     reference_sequence = row["Reference_Sequence"]
@@ -71,6 +73,112 @@ def parse_row(row, original_seq):
     assert len(aligned_sequence) == len(original_seq)
     encodings_per_position_series = get_substitution_encoding(aligned_sequence, original_seq)
     return encodings_per_position_series
+
+
+# Note 20251027:  from vectorization: https://chatgpt.com/share/68ff9747-34a4-8006-b93f-9be3a4a5c9a6
+# Does NOT handle insertions now, since this would prevent equal lengths of each allele thereby preventing straightforward vectorization
+import numpy as np
+import pandas as pd
+import time
+
+def encode_population_df_vectorized(df: pd.DataFrame, reference_seq: str) -> pd.Series:
+    """
+    Vectorized encoding of a CRISPResso allele table DataFrame.
+    - Removes insertions (positions with '-' in Reference_Sequence)
+    - Handles substitutions, deletions, and N
+    - Returns a pd.Series with MultiIndex (FullChange, Position, Ref, Alt)
+      matching the original per-position encoding structure.
+    Includes print statements to track progress.
+    """
+    start_time = time.time()
+    print(f"[encode_population_df_vectorized] Started encoding for {len(df)} sequences")
+
+    nucleotides = np.array(["A", "C", "G", "T", "N", "-"])
+
+    ref_list = df["Reference_Sequence"].astype(str).values
+    aln_list = df["Aligned_Sequence"].astype(str).values
+
+    print("  - Step 1: Removing insertions from aligned sequences...")
+    aln_cleaned = []
+    for i, (ref, aln) in enumerate(zip(ref_list, aln_list)):
+        if len(ref) != len(aln):
+            raise ValueError(f"Row {i}: Reference and aligned sequences differ in length ({len(ref)} vs {len(aln)})")
+
+        aln_clean = ''.join([a for r, a in zip(ref, aln) if r != "-"])
+        aln_cleaned.append(aln_clean)
+
+        if (i + 1) % 100000 == 0:
+            print(f"    Processed {i + 1:,}/{len(ref_list)} sequences...")
+
+    lengths = {len(s) for s in aln_cleaned}
+    if len(lengths) != 1:
+        raise ValueError(f"  ❌ Cleaned sequences not uniform in length: {lengths}")
+
+    seq_len = len(aln_cleaned[0])
+    if seq_len != len(reference_seq):
+        raise ValueError(
+            f"  ❌ Cleaned aligned sequence length ({seq_len}) != ungapped reference_seq length ({len(reference_seq)})"
+        )
+    print(f"  ✓ All sequences cleaned successfully (length = {seq_len})")
+
+    # Step 2: Vectorized conversion
+    print("  - Step 2: Converting sequences to numpy arrays...")
+    aln_array = np.array([list(seq) for seq in aln_cleaned])
+    ref_array = np.array(list(reference_seq))
+    print(f"  ✓ Shape of aln_array: {aln_array.shape}")
+
+    # Step 3: Build mismatch mappings
+    print("  - Step 3: Building mismatch mappings per position...")
+    mismatch_mappings_per_position = []
+    for pos in range(seq_len):
+        ref_base = ref_array[pos]
+        alt_bases = [b for b in nucleotides if b != ref_base]
+        mismatch_mappings_per_position.append(alt_bases)
+
+    mismatch_mappings_per_position_df = pd.DataFrame(mismatch_mappings_per_position).T
+
+    # Step 4: Flatten info for MultiIndex
+    print("  - Step 4: Creating MultiIndex metadata...")
+    mismatch_mappings_per_position_POS_list = np.arange(mismatch_mappings_per_position_df.shape[1]).repeat(
+        mismatch_mappings_per_position_df.shape[0]
+    )
+    mismatch_mappings_per_position_REF_list = np.asarray(list(reference_seq)).repeat(
+        mismatch_mappings_per_position_df.shape[0]
+    ).astype(object)
+    mismatch_mappings_per_position_ALT_list = mismatch_mappings_per_position_df.T.values.flatten()
+    mismatch_mappings_per_position_full_list = (
+        mismatch_mappings_per_position_POS_list.astype(str)
+        + mismatch_mappings_per_position_REF_list
+        + ">"
+        + mismatch_mappings_per_position_ALT_list
+    )
+
+    # Step 5: Compute encodings
+    print("  - Step 5: Encoding substitutions and deletions...")
+    encodings_per_position = []
+    for pos in range(seq_len):
+        ref_base = ref_array[pos]
+        alt_bases = mismatch_mappings_per_position_df[pos].values
+        for alt_base in alt_bases:
+            encodings_per_position.append((aln_array[:, pos] == alt_base).astype(int))
+        if (pos + 1) % 50 == 0 or pos == seq_len - 1:
+            print(f"    Encoded position {pos + 1}/{seq_len}")
+
+    encodings_per_position_array = np.array(encodings_per_position).T  # (n_seq, n_features)
+    encoding_df = pd.DataFrame(
+        encodings_per_position_array,
+        columns=pd.MultiIndex.from_tuples(
+            zip(
+                mismatch_mappings_per_position_full_list,
+                mismatch_mappings_per_position_POS_list,
+                mismatch_mappings_per_position_REF_list,
+                mismatch_mappings_per_position_ALT_list,
+            ),
+            names=["FullChange", "Position", "Ref", "Alt"],
+        ),
+    )
+    print(f"  ✓ Encoding complete: shape = {encoding_df.shape} (sequences × features)")
+    return encoding_df
 
 
 @dataclass
@@ -183,7 +291,7 @@ class EncodingDataFrames:
                     biological_replicate_allele_table = sum_technical_replicate_allele_tables([read_allele_table(technical_replicate_fn) for technical_replicate_fn in biological_replicate_input])
                     population_baseline_df.append(biological_replicate_allele_table)
                 else:
-                    biological_replicate_allele_table = read_allele_table(fn)
+                    biological_replicate_allele_table = read_allele_table(biological_replicate_input)
                     population_baseline_df.append(biological_replicate_allele_table)
             self.population_baseline_df = population_baseline_df
 
@@ -196,7 +304,7 @@ class EncodingDataFrames:
                     biological_replicate_allele_table = sum_technical_replicate_allele_tables([read_allele_table(technical_replicate_fn) for technical_replicate_fn in biological_replicate_input])
                     population_target_df.append(biological_replicate_allele_table)
                 else:
-                    biological_replicate_allele_table = read_allele_table(fn)
+                    biological_replicate_allele_table = read_allele_table(biological_replicate_input)
                     population_target_df.append(biological_replicate_allele_table)
             self.population_target_df = population_target_df
 
@@ -209,7 +317,7 @@ class EncodingDataFrames:
                     biological_replicate_allele_table = sum_technical_replicate_allele_tables([read_allele_table(technical_replicate_fn) for technical_replicate_fn in biological_replicate_input])
                     population_presort_df.append(biological_replicate_allele_table)
                 else:
-                    biological_replicate_allele_table = read_allele_table(fn)
+                    biological_replicate_allele_table = read_allele_table(biological_replicate_input)
                     population_presort_df.append(biological_replicate_allele_table)
             self.population_presort_df = population_presort_df
 
@@ -222,32 +330,33 @@ class EncodingDataFrames:
                     biological_replicate_allele_table = sum_technical_replicate_allele_tables([read_allele_table(technical_replicate_fn) for technical_replicate_fn in biological_replicate_input])
                     population_wt_df.append(biological_replicate_allele_table)
                 else:
-                    biological_replicate_allele_table = read_allele_table(fn)
+                    biological_replicate_allele_table = read_allele_table(biological_replicate_input)
                     population_wt_df.append(biological_replicate_allele_table)
             self.population_wt_df = population_wt_df
 
-    def encode_crispresso_allele_table(self, progress_bar=False, cores=1):
-        parse_lambda = lambda row: parse_row(row, self.reference_sequence)
-        
-        if cores > 1:
-            pandarallel.initialize(progress_bar=progress_bar, nb_workers=cores)
-            print("Encoding population_baseline_df")
-            self.population_baseline_encoding = None if self.population_baseline_df is None else [df.parallel_apply(parse_lambda, axis=1) for df in self.population_baseline_df]
-            print("Encoding population_target_df")
-            self.population_target_encoding = None if self.population_target_df is  None else [df.parallel_apply(parse_lambda, axis=1) for df in self.population_target_df]
-            print("Encoding population_presort_df")
-            self.population_presort_encoding = None if self.population_presort_df is  None else [df.parallel_apply(parse_lambda, axis=1) for df in self.population_presort_df]
-            print("Encoding population_wt_df")
-            self.population_wt_encoding = None if self.population_wt_df is  None else [df.parallel_apply(parse_lambda, axis=1) for df in self.population_wt_df]
-        else:
-            print("Encoding population_baseline_df")
-            self.population_baseline_encoding = None if self.population_baseline_df is None else [df.apply(parse_lambda, axis=1) for df in self.population_baseline_df]
-            print("Encoding population_target_df")
-            self.population_target_encoding = None if self.population_target_df is  None else [df.apply(parse_lambda, axis=1) for df in self.population_target_df]
-            print("Encoding population_presort_df")
-            self.population_presort_encoding = None if self.population_presort_df is  None else [df.apply(parse_lambda, axis=1) for df in self.population_presort_df]
-            print("Encoding population_wt_df")
-            self.population_wt_encoding = None if self.population_wt_df is  None else [df.apply(parse_lambda, axis=1) for df in self.population_wt_df]
+    def encode_crispresso_allele_table(self):
+        """
+        Encode all population DataFrames (baseline, target, presort, wt) using
+        vectorized substitution encoding. Handles lists of DataFrames.
+        """
+        # Helper to encode a single population list
+        def encode_population_list(pop_list, ref_seq):
+            if pop_list is None:
+                return None
+            # Apply vectorized encoding to each DataFrame in the list
+            return [encode_population_df_vectorized(df, ref_seq) for df in pop_list]
+
+        print("Encoding population_baseline_df")
+        self.population_baseline_encoding = encode_population_list(self.population_baseline_df, self.reference_sequence)
+
+        print("Encoding population_target_df")
+        self.population_target_encoding = encode_population_list(self.population_target_df, self.reference_sequence)
+
+        print("Encoding population_presort_df")
+        self.population_presort_encoding = encode_population_list(self.population_presort_df, self.reference_sequence)
+
+        print("Encoding population_wt_df")
+        self.population_wt_encoding = encode_population_list(self.population_wt_df, self.reference_sequence)
 
 
     def postprocess_encoding(self):
@@ -264,8 +373,11 @@ class EncodingDataFrames:
         def process_encoding(encoding_set):
             for encoding_df in encoding_set:
                 encoding_df.columns = encoding_df.columns.get_level_values("FullChange")
+                
         def add_read_column(original_dfs, encoded_dfs, suffix):
             for i, original_dfs_rep in enumerate(original_dfs):
+                encoded_dfs[i] = encoded_dfs[i].reset_index(drop=True)
+                original_dfs_rep = original_dfs_rep.reset_index(drop=True)
                 encoded_dfs[i]["#Reads{}".format(suffix)] = original_dfs_rep["#Reads"]
 
         # Remember to consider strand, spotcheck. Use +6 window size for ABE, +13 window size for evoCDA. +6 window peak
@@ -308,20 +420,17 @@ class EncodingDataFrames:
                         print("Filtering by editable positions")
                         noneditable_colnames_position = [colname_feature[3] for colname_feature in colname_features if colname_feature[0] not in editable_positions]  # select positions that do not contain position
                         print(f"{len(noneditable_colnames_position)} non-editable positions")
-                        print(noneditable_colnames_position)
                         filtered_nucleotide_ids_list.extend(noneditable_colnames_position)
                     if len(variant_types) > 0: # Filter by type
                         print("Filtering by variant types")
                         noneditable_colnames_variants = [colname_feature[3] for colname_feature in colname_features if np.all([(colname_feature[1]!=variant_type[0]) or (colname_feature[2]!=variant_type[1]) for variant_type in variant_types])] # Select features that does not contain a variant type
                         print(f"{len(noneditable_colnames_variants)} variant types")
-                        print(noneditable_colnames_variants)
                         filtered_nucleotide_ids_list.extend(noneditable_colnames_variants)
                     
                 # Perform denoising
                 encoded_dfs_denoised: List[pd.DataFrame] = []
                 filtered_nucleotide_ids_set = list(set(filtered_nucleotide_ids_list))
                 print(f"Denoising out {len(filtered_nucleotide_ids_set)} columns.")
-                print(filtered_nucleotide_ids_set)
                 if len(filtered_nucleotide_ids_set) > 0:
                     for encoded_df_rep in encoded_dfs:
                         if remove_denoised:

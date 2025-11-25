@@ -37,24 +37,58 @@ def decay_function(x, k, a, c=1.0, epsilon=0.01):
     # Shifted exponential decay toward asymptote
     return c + (k - c) * np.exp(-b * x)
 
-def decay_function_2d(enriched_count, baseline_count, A_2d_parameter, k_enriched_2d_parameter, k_baseline_2d_parameter, C_2d_parameter):
+def decay_function_2d(
+    enriched_count,
+    baseline_count,
+    A1_parameter_2D,
+    k1_parameter_enriched_2D,
+    k1_parameter_baseline_2D,
+    A2_parameter_2D,
+    k2_parameter_enriched_2D,
+    k2_parameter_baseline_2D,
+    C_parameter_2D
+):
     """
-    Evaluate the fitted 2D exponential decay surface at one point (x, y).
+    Evaluate the fitted 2D *double exponential* decay surface.
 
     Parameters
     ----------
-    x : float
-        Enriched read depth (binned or raw)
-    y : float
-        Baseline read depth (binned or raw)
-    A_2d_parameter, k_enriched_2d_parameter, k_baseline_2d_parameter, C_2d_parameter : floats
-        Parameters returned from the 2D model fit.
+    enriched_count : float
+        Enriched read depth (x)
+
+    baseline_count : float
+        Baseline read depth (y)
+
+    A1_parameter_2D, A2_parameter_2D : float
+        Amplitudes of the two exponential components.
+
+    k1_parameter_enriched_2D, k2_parameter_enriched_2D : float
+        Decay rates for enriched counts in components 1 and 2.
+
+    k1_parameter_baseline_2D, k2_parameter_baseline_2D : float
+        Decay rates for baseline counts in components 1 and 2.
+
+    C_parameter_2D : float
+        Asymptotic floor.
 
     Returns
     -------
-    float : decay value (analogous to your previous 1D decay function)
+    float
+        Decay value at (x, y)
     """
-    return A_2d_parameter * np.exp((-k_enriched_2d_parameter * enriched_count) - (k_baseline_2d_parameter * baseline_count)) + C_2d_parameter
+
+    term1 = A1_parameter_2D * np.exp(
+        -(k1_parameter_enriched_2D * enriched_count + 
+          k1_parameter_baseline_2D * baseline_count)
+    )
+
+    term2 = A2_parameter_2D * np.exp(
+        -(k2_parameter_enriched_2D * enriched_count + 
+          k2_parameter_baseline_2D * baseline_count)
+    )
+
+    return term1 + term2 + C_parameter_2D
+
 
 def __normalize_counts(encoding_df: pd.DataFrame,
                           enriched_pop_df_reads_colname: str,
@@ -292,8 +326,9 @@ class MillipedeInputDataLoader:
         return merged_df_experiment_list
         
 
+
     def plot_binned_reads_by_score_standard_deviation(
-            self, ymax=500, bin_width=10, figsize_width=12, figsize_height=10
+            self, bounded_score=True, ymax=500, bin_width=10, figsize_width=12, figsize_height=10
         ):
 
         # -----------------------------------------------------------
@@ -334,7 +369,6 @@ class MillipedeInputDataLoader:
             # cap dominating bins
             cap = np.percentile(w, cap_percentile)
             w = np.minimum(w, cap)
-
             sigma = 1 / np.sqrt(w)
 
             # model is A exp(-B x) + C
@@ -376,6 +410,16 @@ class MillipedeInputDataLoader:
         a_parameter_baseline = []
         c_parameter_baseline = []
 
+        k_parameter_enriched2D = []
+        k_parameter_baseline2D = []
+        A1_parameter2D = []
+        kX1_parameter2D = []
+        kY1_parameter2D = []
+        A2_parameter2D = []
+        kX2_parameter2D = []
+        kY2_parameter2D = []
+        C_parameter2D = []
+
         # -----------------------------------------------------------
         # MAIN LOOP
         # -----------------------------------------------------------
@@ -391,6 +435,16 @@ class MillipedeInputDataLoader:
             k_parameter_baseline.append([])
             a_parameter_baseline.append([])
             c_parameter_baseline.append([])
+
+            k_parameter_enriched2D.append([])
+            k_parameter_baseline2D.append([])
+            A1_parameter2D.append([])
+            kX1_parameter2D.append([])
+            kY1_parameter2D.append([])
+            A2_parameter2D.append([])
+            kX2_parameter2D.append([])
+            kY2_parameter2D.append([])
+            C_parameter2D.append([])
 
             unprocessed_exp_merged_rep_df_list_copy = []
 
@@ -409,21 +463,20 @@ class MillipedeInputDataLoader:
                     False
                 )
 
-                enr_raw = df[self.enriched_pop_df_reads_colname + "_raw"]
-                bas_raw = df[self.baseline_pop_df_reads_colname + "_raw"]
+                # LFC score = log2(high / low)
+                high_vals = df[self.enriched_pop_df_reads_colname]
+                low_vals  = df[self.baseline_pop_df_reads_colname]
+                eps = 1
 
-                df_norm["score"] = (
-                    df[self.enriched_pop_df_reads_colname] -
-                    df[self.baseline_pop_df_reads_colname]
-                ) / (
-                    df[self.enriched_pop_df_reads_colname] +
-                    df[self.baseline_pop_df_reads_colname]
-                )
+                if bounded_score:
+                    df_norm["score"] = ( high_vals - low_vals ) / ( high_vals + low_vals + eps)
+                else:
+                    df_norm["score"] = np.log2((high_vals + eps) / (low_vals + eps))
 
                 # binning
                 bins = np.arange(0, ymax, bin_width)
-                df_norm['enriched_bins'] = pd.cut(enr_raw, bins)
-                df_norm['baseline_bins'] = pd.cut(bas_raw, bins)
+                df_norm['enriched_bins'] = pd.cut(df[self.enriched_pop_df_reads_colname+"_raw"], bins)
+                df_norm['baseline_bins'] = pd.cut(df[self.baseline_pop_df_reads_colname+"_raw"], bins)
 
                 enriched_stats = compute_mean_abs_error(df_norm, 'enriched_bins')
                 baseline_stats = compute_mean_abs_error(df_norm, 'baseline_bins')
@@ -431,7 +484,7 @@ class MillipedeInputDataLoader:
                 enriched_mid = np.array([(iv.left + iv.right)/2 for iv in enriched_stats['enriched_bins']])
                 baseline_mid = np.array([(iv.left + iv.right)/2 for iv in baseline_stats['baseline_bins']])
 
-                # FITTING
+                # 1D FITTING
                 x_enr_fit, y_enr_fit, enr_params = exp_decay_fit_binned(
                     enriched_mid,
                     enriched_stats['mean_abs'].values,
@@ -450,7 +503,7 @@ class MillipedeInputDataLoader:
                 bas_idx = np.argsort(x_bas_fit)
                 x_bas_fit, y_bas_fit = x_bas_fit[bas_idx], y_bas_fit[bas_idx]
 
-                # STORE FIT PARAMETERS
+                # STORE 1D FIT PARAMETERS
                 k_e, a_e, c_e = convert_params(enr_params)
                 k_b, a_b, c_b = convert_params(bas_params)
 
@@ -463,12 +516,11 @@ class MillipedeInputDataLoader:
                 c_parameter_baseline[experiment_i].append(c_b)
 
                 # ---------------------------------------------------
-                # ORIGINAL PLOTTING (UNCHANGED)
+                # PLOTTING 1D
                 # ---------------------------------------------------
                 fig, axes = plt.subplots(2, 1, figsize=(figsize_width, figsize_height))
                 plt.subplots_adjust(hspace=0.55)
 
-                # ENR
                 axes[0].errorbar(
                     enriched_mid,
                     enriched_stats['mean_abs'],
@@ -477,20 +529,13 @@ class MillipedeInputDataLoader:
                 )
                 axes[0].plot(x_enr_fit, y_enr_fit, color='red', linewidth=3)
                 axes[0].set_ylabel("Mean |score|")
-                axes[0].set_title(
-                    f"Smooth monotone decreasing fit (binned) vs {self.enriched_pop_df_reads_colname}\n"
-                    f"Experiment {experiment_i}, Replicate {replicate_i}",
-                    fontsize=12
-                )
+                axes[0].set_title(f"Smooth monotone decreasing fit (binned) vs {self.enriched_pop_df_reads_colname}\n"
+                                f"Experiment {experiment_i}, Replicate {replicate_i}", fontsize=12)
                 axes[0].set_xticks(enriched_mid)
-                axes[0].set_xticklabels(
-                    make_xticklabels_with_n(enriched_stats['enriched_bins'], enriched_stats['n']),
-                    rotation=45, ha='right', fontsize=6
-                )
+                axes[0].set_xticklabels(make_xticklabels_with_n(enriched_stats['enriched_bins'], enriched_stats['n']),
+                                        rotation=45, ha='right', fontsize=6)
                 axes[0].set_xlim(0, ymax)
-                axes[0].set_ylim(0, 1)
 
-                # BASELINE
                 axes[1].errorbar(
                     baseline_mid,
                     baseline_stats['mean_abs'],
@@ -499,27 +544,18 @@ class MillipedeInputDataLoader:
                 )
                 axes[1].plot(x_bas_fit, y_bas_fit, color='red', linewidth=3)
                 axes[1].set_ylabel("Mean |score|")
-                axes[1].set_title(
-                    f"Smooth monotone decreasing fit (binned) vs {self.baseline_pop_df_reads_colname}\n"
-                    f"Experiment {experiment_i}, Replicate {replicate_i}",
-                    fontsize=12
-                )
+                axes[1].set_title(f"Smooth monotone decreasing fit (binned) vs {self.baseline_pop_df_reads_colname}\n"
+                                f"Experiment {experiment_i}, Replicate {replicate_i}", fontsize=12)
                 axes[1].set_xticks(baseline_mid)
-                axes[1].set_xticklabels(
-                    make_xticklabels_with_n(baseline_stats['baseline_bins'], baseline_stats['n']),
-                    rotation=45, ha='right', fontsize=6
-                )
+                axes[1].set_xticklabels(make_xticklabels_with_n(baseline_stats['baseline_bins'], baseline_stats['n']),
+                                        rotation=45, ha='right', fontsize=6)
                 axes[1].set_xlim(0, ymax)
-                axes[1].set_ylim(0, 1)
-
                 plt.show()
 
                 # ---------------------------------------------------
-                # 2D HEATMAP OF mean(|score|) FOR ENRICHED × BASELINE
+                # 2D HEATMAP AND DOUBLE EXP FIT (monotone)
                 # ---------------------------------------------------
-                heatmap_df = df_norm[['score', 'enriched_bins', 'baseline_bins']].copy()
-                heatmap_df = heatmap_df.dropna(subset=['enriched_bins', 'baseline_bins'])
-
+                heatmap_df = df_norm[['score', 'enriched_bins', 'baseline_bins']].dropna()
                 pivot = heatmap_df.pivot_table(
                     index='baseline_bins',
                     columns='enriched_bins',
@@ -530,56 +566,14 @@ class MillipedeInputDataLoader:
                 enr_intervals = pivot.columns
                 bas_intervals = pivot.index
 
-                # Midpoints
+                # midpoints & edges
                 enr_mid_hm = np.array([(iv.left + iv.right)/2 for iv in enr_intervals])
                 bas_mid_hm = np.array([(iv.left + iv.right)/2 for iv in bas_intervals])
-
-                # Edges
                 enr_edges = np.array([iv.left for iv in enr_intervals] + [enr_intervals[-1].right])
                 bas_edges = np.array([iv.left for iv in bas_intervals] + [bas_intervals[-1].right])
 
-                heatmap_vals = pivot.values
-                heatmap_masked = np.ma.masked_invalid(heatmap_vals)
-
-                fig, ax = plt.subplots(figsize=(10, 8))
-
-                cmap = plt.cm.viridis
-                cmap.set_bad(color='white')
-
-                mesh = ax.pcolormesh(
-                    enr_edges,
-                    bas_edges,
-                    heatmap_masked,
-                    cmap=cmap,
-                    shading='auto',
-                    vmax=0.2
-                )
-
-                cbar = plt.colorbar(mesh, ax=ax)
-                cbar.set_label("Mean |score|", fontsize=12)
-
-                ax.set_xlabel(f"{self.enriched_pop_df_reads_colname} (read bin)")
-                ax.set_ylabel(f"{self.baseline_pop_df_reads_colname} (read bin)")
-                ax.set_title(
-                    f"2D binned heatmap of mean |score|\n"
-                    f"Experiment {experiment_i}, Replicate {replicate_i}",
-                    fontsize=14
-                )
-
-                plt.show()
-                
-                # midpoints
-                enr_mid_hm = np.array([(iv.left + iv.right)/2 for iv in enr_intervals])
-                bas_mid_hm = np.array([(iv.left + iv.right)/2 for iv in bas_intervals])
-
-                # edges
-                enr_edges = np.array([iv.left for iv in enr_intervals] + [enr_intervals[-1].right])
-                bas_edges = np.array([iv.left for iv in bas_intervals] + [bas_intervals[-1].right])
-
-                # create full grid of std values
-                heatmap_vals_full = np.full((len(bas_mid_hm), len(enr_mid_hm)), np.nan)  # rows = baseline, cols = enriched
+                heatmap_vals_full = np.full((len(bas_mid_hm), len(enr_mid_hm)), np.nan)
                 weights2d_full = np.zeros_like(heatmap_vals_full)
-
                 for i, bi in enumerate(bas_intervals):
                     for j, ej in enumerate(enr_intervals):
                         cell = heatmap_df[(heatmap_df['baseline_bins']==bi) & (heatmap_df['enriched_bins']==ej)]
@@ -587,55 +581,74 @@ class MillipedeInputDataLoader:
                             heatmap_vals_full[i,j] = np.std(cell['score'])
                             weights2d_full[i,j] = len(cell)
 
-                # meshgrid for fitting
-                Xf, Yf = np.meshgrid(enr_mid_hm, bas_mid_hm)  # X = enriched, Y = baseline
-
-                Zf = heatmap_vals_full  # rows = Y, cols = X
+                Xf, Yf = np.meshgrid(enr_mid_hm, bas_mid_hm)
+                Zf = heatmap_vals_full
                 mask_fit = ~np.isnan(Zf)
-                X_fit2d = Xf[mask_fit]
-                Y_fit2d = Yf[mask_fit]
-                Z_fit2d = Zf[mask_fit]
-                sigma2d = 1 / np.sqrt(weights2d_full[mask_fit] + 1e-8)
+                X_fit2d, Y_fit2d, Z_fit2d, sigma2d = Xf[mask_fit], Yf[mask_fit], Zf[mask_fit], 1/np.sqrt(weights2d_full[mask_fit]+1e-8)
 
-                # fit 2D exponential
-                def exp2d_model(coords, A, kx, ky, C):
+                # double exponential, monotone
+                def double_exp2d(coords, A1, kX1, kY1, A2, kX2, kY2, C):
                     x, y = coords
-                    return A * np.exp(-kx*x - ky*y) + C
+                    return (A1 * np.exp(-kX1 * x - kY1 * y) +
+                            A2 * np.exp(-kX2 * x - kY2 * y) +
+                            C)
 
-                p0 = [np.nanmax(Z_fit2d), 0.01, 0.01, np.nanmin(Z_fit2d)]
+                p0 = [np.nanmax(Z_fit2d)/2, 0.01, 0.01, np.nanmax(Z_fit2d)/2, 0.01, 0.01, np.nanmin(Z_fit2d)]
+                lower_bounds = [0, 1e-6, 1e-6, 0, 1e-6, 1e-6, 0]
+                upper_bounds = [np.inf]*7
+
                 try:
-                    popt2d, _ = curve_fit(exp2d_model, (X_fit2d, Y_fit2d), Z_fit2d, sigma=sigma2d, p0=p0, maxfev=30000)
+                    popt2d, _ = curve_fit(
+                        double_exp2d,
+                        (X_fit2d, Y_fit2d),
+                        Z_fit2d,
+                        sigma=sigma2d,
+                        p0=p0,
+                        bounds=(lower_bounds, upper_bounds),
+                        maxfev=30000
+                    )
                 except RuntimeError:
-                    popt2d = [np.nan]*4
+                    popt2d = [np.nan]*7
 
-                # evaluate fit on full grid
-                Z_fit_surface = exp2d_model((Xf, Yf), *popt2d)
+                Z_fit_surface = double_exp2d((Xf, Yf), *popt2d)
 
-                # plotting
+                # STORE 2D PARAMETERS
+                A1_parameter2D[experiment_i].append(popt2d[0])
+                kX1_parameter2D[experiment_i].append(popt2d[1])
+                kY1_parameter2D[experiment_i].append(popt2d[2])
+                A2_parameter2D[experiment_i].append(popt2d[3])
+                kX2_parameter2D[experiment_i].append(popt2d[4])
+                kY2_parameter2D[experiment_i].append(popt2d[5])
+                C_parameter2D[experiment_i].append(popt2d[6])
+
+                k_parameter_enriched2D[experiment_i].append(popt2d[0]+popt2d[3]+popt2d[6])
+                k_parameter_baseline2D[experiment_i].append(popt2d[0]+popt2d[3]+popt2d[6])
+
+                # 2D plotting
                 fig, ax = plt.subplots(1, 2, figsize=(14, 6))
+                cmap = plt.cm.viridis
+                cmap.set_bad(color='white')
 
-                # empirical
-                im0 = ax[0].pcolormesh(enr_edges, bas_edges, Zf, shading='auto', cmap='viridis')
+                im0 = ax[0].pcolormesh(enr_edges, bas_edges, Zf, shading='auto', cmap=cmap)
                 ax[0].set_title('Empirical 2D Histogram')
                 ax[0].set_xlabel(f"{self.enriched_pop_df_reads_colname} (read bin)")
                 ax[0].set_ylabel(f"{self.baseline_pop_df_reads_colname} (read bin)")
                 plt.colorbar(im0, ax=ax[0])
 
-                # fitted
-                im1 = ax[1].pcolormesh(enr_edges, bas_edges, Z_fit_surface, shading='auto', cmap='viridis')
-                ax[1].set_title('Fitted 2D Exponential Surface')
+                im1 = ax[1].pcolormesh(enr_edges, bas_edges, Z_fit_surface, shading='auto', cmap=cmap)
+                ax[1].set_title('Fitted 2D Double Exponential (monotone)')
                 ax[1].set_xlabel(f"{self.enriched_pop_df_reads_colname} (read bin)")
                 ax[1].set_ylabel(f"{self.baseline_pop_df_reads_colname} (read bin)")
                 plt.colorbar(im1, ax=ax[1])
 
                 plt.show()
-
-
                 unprocessed_exp_merged_rep_df_list_copy.append(df)
 
             unprocessed_merged_experiment_df_list_copy.append(unprocessed_exp_merged_rep_df_list_copy)
 
-            
+        # -----------------------------------------------------------
+        # RETURN STRUCTURED DICTIONARY
+        # -----------------------------------------------------------
         return {
             "k_parameter_enriched": k_parameter_enriched,
             "a_parameter_enriched": a_parameter_enriched,
@@ -643,11 +656,17 @@ class MillipedeInputDataLoader:
             "k_parameter_baseline": k_parameter_baseline,
             "a_parameter_baseline": a_parameter_baseline,
             "c_parameter_baseline": c_parameter_baseline,
-            "A_2d_parameter": popt2d[0],
-            "k_baseline_2d_parameter": popt2d[1],
-            "k_enriched_2d_parameter": popt2d[2],
-            "C_2d_parameter": popt2d[3]
+            "k_parameter_enriched2D": k_parameter_enriched2D,
+            "k_parameter_baseline2D": k_parameter_baseline2D,
+            "A1_parameter_2D": A1_parameter2D,
+            "k1_parameter_enriched_2D": kX1_parameter2D,
+            "k1_parameter_baseline_2D": kY1_parameter2D,
+            "A2_parameter_2D": A2_parameter2D,
+            "k2_parameter_enriched_2D": kX2_parameter2D,
+            "k2_parameter_baseline_2D": kY2_parameter2D,
+            "C_parameter_2D": C_parameter2D
         }
+
 
 
         
@@ -1015,6 +1034,7 @@ class MillipedeInputDataExperimentalGroup:
                                                        enriched_pop_df_reads_colname=millipede_input_data_loader.enriched_pop_df_reads_colname,                               
                                                        baseline_pop_df_reads_colname= millipede_input_data_loader.baseline_pop_df_reads_colname,
                                                        presort_pop_df_reads_colname=millipede_input_data_loader.presort_pop_df_reads_colname,
+                                                       bounded_score=design_matrix_processing_specification.bounded_score,
                                                        sigma_scale_normalized= design_matrix_processing_specification.sigma_scale_normalized,
                                                        decay_sigma_scale= design_matrix_processing_specification.decay_sigma_scale,
                                                        use_2d_decay_function=design_matrix_processing_specification.use_2d_decay_function,
@@ -1026,10 +1046,14 @@ class MillipedeInputDataExperimentalGroup:
                                                        c_parameter_enriched=design_matrix_processing_specification.c_parameter_enriched,
                                                        c_parameter_baseline=design_matrix_processing_specification.c_parameter_baseline,
                                                        
-                                                       A_2d_parameter=design_matrix_processing_specification.A_2d_parameter,
-                                                       k_baseline_2d_parameter=design_matrix_processing_specification.k_baseline_2d_parameter,
-                                                       k_enriched_2d_parameter=design_matrix_processing_specification.k_enriched_2d_parameter,
-                                                       C_2d_parameter=design_matrix_processing_specification.C_2d_parameter,
+                                                       A1_parameter_2D=design_matrix_processing_specification.A1_parameter_2D,
+                                                       k1_parameter_enriched_2D=design_matrix_processing_specification.k1_parameter_enriched_2D,
+                                                       k1_parameter_baseline_2D=design_matrix_processing_specification.k1_parameter_baseline_2D,
+                                                       A2_parameter_2D=design_matrix_processing_specification.A2_parameter_2D,
+                                                       k2_parameter_enriched_2D=design_matrix_processing_specification.k2_parameter_enriched_2D,
+                                                       k2_parameter_baseline_2D=design_matrix_processing_specification.k2_parameter_baseline_2D,
+                                                       C_parameter_2D=design_matrix_processing_specification.C_parameter_2D,
+
 
                                                        set_offset_as_default=design_matrix_processing_specification.set_offset_as_default,
                                                        set_offset_as_total_reads=design_matrix_processing_specification.set_offset_as_total_reads,
@@ -1163,6 +1187,7 @@ class MillipedeInputDataExperimentalGroup:
                                  enriched_pop_df_reads_colname: str, 
                                  baseline_pop_df_reads_colname: str,
                                  presort_pop_df_reads_colname: Optional[str],
+                                 bounded_score:bool,
                                  sigma_scale_normalized: bool,
                                  decay_sigma_scale: bool,
                                  use_2d_decay_function: bool,
@@ -1182,11 +1207,15 @@ class MillipedeInputDataExperimentalGroup:
                                  c_parameter_enriched: Union[float, List[float], List[List[float]]] = None,
                                  c_parameter_baseline: Union[float, List[float], List[List[float]]] = None,
 
-                                 A_2d_parameter: Union[float, List[float], List[List[float]]] = None,
-                                 k_baseline_2d_parameter: Union[float, List[float], List[List[float]]] = None,
-                                 k_enriched_2d_parameter: Union[float, List[float], List[List[float]]] = None,
-                                 C_2d_parameter: Union[float, List[float], List[List[float]]] = None,
+                                 A1_parameter_2D: Union[float, List[float], List[List[float]]] = None,
+                                 k1_parameter_enriched_2D: Union[float, List[float], List[List[float]]] = None,
+                                 k1_parameter_baseline_2D: Union[float, List[float], List[List[float]]] = None,
 
+                                 A2_parameter_2D: Union[float, List[float], List[List[float]]] = None,
+                                 k2_parameter_enriched_2D: Union[float, List[float], List[List[float]]] = None,
+                                 k2_parameter_baseline_2D: Union[float, List[float], List[List[float]]] = None,
+
+                                 C_parameter_2D: Union[float, List[float], List[List[float]]] = None,
                                  experiment_i: Optional[int] = None,
                                  replicate_i: Optional[int] = None
                                 ) -> pd.DataFrame:
@@ -1227,7 +1256,10 @@ class MillipedeInputDataExperimentalGroup:
         total_read_counts = encoding_df['total_reads']
         
         if 'score' not in encoding_df.columns: 
-            encoding_df['score'] = (enriched_read_counts - baseline_read_counts) / (enriched_read_counts + baseline_read_counts) 
+            if bounded_score:
+                encoding_df['score'] = (enriched_read_counts - baseline_read_counts) / (enriched_read_counts + baseline_read_counts) 
+            else:
+                encoding_df['score'] = np.log2( (enriched_read_counts + 1) / (baseline_read_counts + 1) )
             encoding_df = encoding_df[~encoding_df['score'].isna()] # Remove rows where score is NA (due to 0 counts)
             
         # create scale_factor for normal likelihood model
@@ -1244,17 +1276,27 @@ class MillipedeInputDataExperimentalGroup:
                 a_parameter_baseline_selected=None, 
                 c_parameter_enriched_selected=None, 
                 c_parameter_baseline_selected=None,
-                A_2d_parameter_selected=None,
-                k_baseline_2d_parameter_selected=None,
-                k_enriched_2d_parameter_selected=None,
-                C_2d_parameter_selected=None):
+
+                A1_parameter_2D_selected = None,
+                k1_parameter_enriched_2D_selected = None,
+                k1_parameter_baseline_2D_selected = None,
+
+                A2_parameter_2D_selected = None,
+                k2_parameter_enriched_2D_selected = None,
+                k2_parameter_baseline_2D_selected = None,
+
+                C_parameter_2D_selected = None):
 
                 if use_2d_decay_function is True:
-                    input_encoding_df["A_2d_parameter"] = A_2d_parameter_selected
-                    input_encoding_df["k_baseline_2d_parameter"] = k_baseline_2d_parameter_selected
-                    input_encoding_df["k_enriched_2d_parameter"] = k_enriched_2d_parameter_selected
-                    input_encoding_df["C_2d_parameter"] = C_2d_parameter_selected
-               else:
+                    input_encoding_df["A1_parameter_2D_selected"] = A1_parameter_2D_selected
+                    input_encoding_df["k1_parameter_enriched_2D_selected"] = k1_parameter_enriched_2D_selected
+                    input_encoding_df["k1_parameter_baseline_2D_selected"] = k1_parameter_baseline_2D_selected
+                    
+                    input_encoding_df["A2_parameter_2D_selected"] = A2_parameter_2D_selected
+                    input_encoding_df["k2_parameter_enriched_2D_selected"] = k2_parameter_enriched_2D_selected
+                    input_encoding_df["k2_parameter_baseline_2D_selected"] = k2_parameter_baseline_2D_selected
+                    input_encoding_df["C_parameter_2D_selected"] = C_parameter_2D_selected
+                else:
                     input_encoding_df["K_enriched"] = K_enriched_selected
                     input_encoding_df["K_baseline"] = K_baseline_selected
                     input_encoding_df["a_parameter_enriched"] = a_parameter_enriched_selected
@@ -1267,13 +1309,16 @@ class MillipedeInputDataExperimentalGroup:
                     if decay_sigma_scale:
                         if use_2d_decay_function is True:
                             input_encoding_df['scale_factor'] = decay_function_2d(
-                                enriched_count = input_encoding_df[enriched_pop_df_reads_colname],
-                                baseline_count = input_encoding_df[baseline_pop_df_reads_colname],
-                                A_2d_parameter = A_2d_parameter_selected, 
-                                k_enriched_2d_parameter = k_enriched_2d_parameter_selected, 
-                                k_baseline_2d_parameter = k_baseline_2d_parameter_selected, 
-                                C_2d_parameter = C_2d_parameter_selected
-                            )
+                                                                    enriched_count = input_encoding_df[enriched_pop_df_reads_colname],
+                                                                    baseline_count = input_encoding_df[baseline_pop_df_reads_colname],
+                                                                    A1_parameter_2D = A1_parameter_2D_selected,
+                                                                    k1_parameter_enriched_2D = k1_parameter_enriched_2D_selected,
+                                                                    k1_parameter_baseline_2D = k1_parameter_baseline_2D_selected,
+                                                                    A2_parameter_2D = A2_parameter_2D_selected,
+                                                                    k2_parameter_enriched_2D = k2_parameter_enriched_2D_selected,
+                                                                    k2_parameter_baseline_2D = k2_parameter_baseline_2D_selected,
+                                                                    C_parameter_2D = C_parameter_2D_selected
+                                                                )
                         else:
                             input_encoding_df['scale_factor'] = ((decay_function(input_encoding_df[enriched_pop_df_reads_colname], K_enriched_selected, a_parameter_enriched_selected, c_parameter_enriched_selected))  + (decay_function(input_encoding_df[baseline_pop_df_reads_colname], K_baseline_selected, a_parameter_baseline_selected, c_parameter_baseline_selected)))/2 
                     else:
@@ -1282,13 +1327,16 @@ class MillipedeInputDataExperimentalGroup:
                     if decay_sigma_scale:
                         if use_2d_decay_function is True:
                             input_encoding_df['scale_factor'] = decay_function_2d(
-                                enriched_count = input_encoding_df[enriched_pop_df_reads_colname + "_raw"],
-                                baseline_count = input_encoding_df[baseline_pop_df_reads_colname + "_raw"],
-                                A_2d_parameter = A_2d_parameter_selected, 
-                                k_enriched_2d_parameter = k_enriched_2d_parameter_selected, 
-                                k_baseline_2d_parameter = k_baseline_2d_parameter_selected, 
-                                C_2d_parameter = C_2d_parameter_selected
-                            )
+                                                                    enriched_count = input_encoding_df[enriched_pop_df_reads_colname + "_raw"],
+                                                                    baseline_count = input_encoding_df[baseline_pop_df_reads_colname + "_raw"],
+                                                                    A1_parameter_2D = A1_parameter_2D_selected,
+                                                                    k1_parameter_enriched_2D = k1_parameter_enriched_2D_selected,
+                                                                    k1_parameter_baseline_2D = k1_parameter_baseline_2D_selected,
+                                                                    A2_parameter_2D = A2_parameter_2D_selected,
+                                                                    k2_parameter_enriched_2D = k2_parameter_enriched_2D_selected,
+                                                                    k2_parameter_baseline_2D = k2_parameter_baseline_2D_selected,
+                                                                    C_parameter_2D = C_parameter_2D_selected
+                                                                )
                         else:
                             input_encoding_df['scale_factor'] = ((decay_function(input_encoding_df[enriched_pop_df_reads_colname + "_raw"], K_enriched_selected, a_parameter_enriched_selected, c_parameter_enriched_selected)) + (decay_function(input_encoding_df[baseline_pop_df_reads_colname + "_raw"], K_baseline_selected, a_parameter_baseline_selected, c_parameter_baseline_selected)))/2 
                     else:
@@ -1326,16 +1374,32 @@ class MillipedeInputDataExperimentalGroup:
                     c_parameter_enriched_selected = retrieve_sample_parameter(c_parameter_enriched, experiment_index=exp_index, replicate_index=rep_index)
                     c_parameter_baseline_selected = retrieve_sample_parameter(c_parameter_baseline, experiment_index=exp_index, replicate_index=rep_index)
 
-
-                    A_2d_parameter_selected = retrieve_sample_parameter(A_2d_parameter, experiment_index=exp_index, replicate_index=rep_index)
-                    k_baseline_2d_parameter_selected = retrieve_sample_parameter(k_baseline_2d_parameter, experiment_index=exp_index, replicate_index=rep_index)
-                    k_enriched_2d_parameter_selected = retrieve_sample_parameter(k_enriched_2d_parameter, experiment_index=exp_index, replicate_index=rep_index)
-                    C_2d_parameter_selected = retrieve_sample_parameter(C_2d_parameter, experiment_index=exp_index, replicate_index=rep_index)  
+                    A1_parameter_2D_selected = retrieve_sample_parameter(A1_parameter_2D, experiment_index=exp_index, replicate_index=rep_index)
+                    k1_parameter_enriched_2D_selected = retrieve_sample_parameter(k1_parameter_enriched_2D, experiment_index=exp_index, replicate_index=rep_index)
+                    k1_parameter_baseline_2D_selected = retrieve_sample_parameter(k1_parameter_baseline_2D, experiment_index=exp_index, replicate_index=rep_index)
+                    A2_parameter_2D_selected = retrieve_sample_parameter(A2_parameter_2D, experiment_index=exp_index, replicate_index=rep_index)
+                    k2_parameter_enriched_2D_selected = retrieve_sample_parameter(k2_parameter_enriched_2D, experiment_index=exp_index, replicate_index=rep_index)
+                    k2_parameter_baseline_2D_selected = retrieve_sample_parameter(k2_parameter_baseline_2D, experiment_index=exp_index, replicate_index=rep_index)
+                    C_parameter_2D_selected = retrieve_sample_parameter(C_parameter_2D, experiment_index=exp_index, replicate_index=rep_index)
 
                     # Subset the encoding by the intercept index and add scale factor
                     sample_encoding_df = encoding_df[encoding_df[intercept_col] == 1]
-                    sample_encoding_df = set_scale_factor(input_encoding_df=sample_encoding_df, use_2d_decay_function=use_2d_decay_function, K_enriched_selected=K_enriched_selected, K_baseline_selected=K_baseline_selected, a_parameter_enriched_selected=a_parameter_enriched_selected, a_parameter_baseline_selected=a_parameter_baseline_selected,
-                    c_parameter_enriched_selected=c_parameter_enriched_selected, c_parameter_baseline_selected=c_parameter_baseline_selected, A_2d_parameter_selected=A_2d_parameter_selected, k_baseline_2d_parameter_selected=k_baseline_2d_parameter_selected, k_enriched_2d_parameter_selected=k_enriched_2d_parameter_selected, C_2d_parameter_selected=C_2d_parameter_selected)
+                    sample_encoding_df = set_scale_factor(
+                        input_encoding_df=sample_encoding_df, 
+                        use_2d_decay_function=use_2d_decay_function, 
+                        K_enriched_selected=K_enriched_selected, 
+                        K_baseline_selected=K_baseline_selected, 
+                        a_parameter_enriched_selected=a_parameter_enriched_selected, 
+                        a_parameter_baseline_selected=a_parameter_baseline_selected,
+                        c_parameter_enriched_selected=c_parameter_enriched_selected, 
+                        c_parameter_baseline_selected=c_parameter_baseline_selected, 
+                        A1_parameter_2D_selected=A1_parameter_2D_selected,
+                        k1_parameter_enriched_2D_selected=k1_parameter_enriched_2D_selected,
+                        k1_parameter_baseline_2D_selected=k1_parameter_baseline_2D_selected,
+                        A2_parameter_2D_selected=A2_parameter_2D_selected,
+                        k2_parameter_enriched_2D_selected=k2_parameter_enriched_2D_selected,
+                        k2_parameter_baseline_2D_selected=k2_parameter_baseline_2D_selected,
+                        C_parameter_2D_selected=C_parameter_2D_selected)
                     sample_encoding_df_list.append(sample_encoding_df)
                 
                 # Concatenate all the updated sample encoding DFs into the complete encoding DF
@@ -1351,10 +1415,13 @@ class MillipedeInputDataExperimentalGroup:
                         assert isinstance(a_parameter_baseline, (int, float)), f"a_parameter {a_parameter_baseline} and all sigma_scale_parameters (K_enriched, K_baseline, a_parameter_enriched, a_parameter_baseline, c_parameter_enriched, c_parameter_baseline) must be an int/float type"
                         assert isinstance(c_parameter_enriched, (int, float)), f"c_parameter {c_parameter_enriched} and all sigma_scale_parameters (K_enriched, K_baseline, a_parameter_enriched, a_parameter_baseline, c_parameter_enriched, c_parameter_baseline) must be an int/float type"
                         assert isinstance(c_parameter_baseline, (int, float)), f"c_parameter {c_parameter_baseline} and all sigma_scale_parameters (K_enriched, K_baseline, a_parameter_enriched, a_parameter_baseline, c_parameter_enriched, c_parameter_baseline) must be an int/float type"
-                        assert isinstance(A_2d_parameter, (int, float)) or (A_2d_parameter is None), f"A_2d_parameter {A_2d_parameter} and all 2d_decay_parameters (A_2d_parameter, k_baseline_2d_parameter, k_enriched_2d_parameter, C_2d_parameter) must be an int/float type or None"
-                        assert isinstance(k_baseline_2d_parameter, (int, float)) or (k_baseline_2d_parameter is None), f"k_baseline_2d_parameter {k_baseline_2d_parameter} and all 2d_decay_parameters (A_2d_parameter, k_baseline_2d_parameter, k_enriched_2d_parameter, C_2d_parameter) must be an int/float type or None"
-                        assert isinstance(k_enriched_2d_parameter, (int, float)) or (k_enriched_2d_parameter is None), f"k_enriched_2d_parameter {k_enriched_2d_parameter} and all 2d_decay_parameters (A_2d_parameter, k_baseline_2d_parameter, k_enriched_2d_parameter, C_2d_parameter) must be an int/float type or None"
-                        assert isinstance(C_2d_parameter, (int, float)) or (C_2d_parameter is None), f"C_2d_parameter {C_2d_parameter} and all 2d_decay_parameters (A_2d_parameter, k_baseline_2d_parameter, k_enriched_2d_parameter, C_2d_parameter) must be an int/float type or None"
+                        assert isinstance(A1_parameter_2D, (int, float)) or (A1_parameter_2D is None), f"A1_parameter_2D {A1_parameter_2D} and all 2d_decay_parameters (A1_parameter_2D, k1_parameter_enriched_2D, k1_parameter_baseline_2D, A2_parameter_2D, k2_parameter_enriched_2D, k2_parameter_baseline_2D, C_parameter_2D) must be an int/float type or None"
+                        assert isinstance(k1_parameter_enriched_2D, (int, float)) or (k1_parameter_enriched_2D is None), f"k1_parameter_enriched_2D {k1_parameter_enriched_2D} and all 2d_decay_parameters (A1_parameter_2D, k1_parameter_enriched_2D, k1_parameter_baseline_2D, A2_parameter_2D, k2_parameter_enriched_2D, k2_parameter_baseline_2D, C_parameter_2D) must be an int/float type or None"
+                        assert isinstance(k1_parameter_baseline_2D, (int, float)) or (k1_parameter_baseline_2D is None), f"k1_parameter_baseline_2D {k1_parameter_baseline_2D} and all 2d_decay_parameters (A1_parameter_2D, k1_parameter_enriched_2D, k1_parameter_baseline_2D, A2_parameter_2D, k2_parameter_enriched_2D, k2_parameter_baseline_2D, C_parameter_2D) must be an int/float type or None"
+                        assert isinstance(A2_parameter_2D, (int, float)) or (A2_parameter_2D is None), f"A2_parameter_2D {A2_parameter_2D} and all 2d_decay_parameters (A1_parameter_2D, k1_parameter_enriched_2D, k1_parameter_baseline_2D, A2_parameter_2D, k2_parameter_enriched_2D, k2_parameter_baseline_2D, C_parameter_2D) must be an int/float type or None"
+                        assert isinstance(k2_parameter_enriched_2D, (int, float)) or (k2_parameter_enriched_2D is None), f"k2_parameter_enriched_2D {k2_parameter_enriched_2D} and all 2d_decay_parameters (A1_parameter_2D, k1_parameter_enriched_2D, k1_parameter_baseline_2D, A2_parameter_2D, k2_parameter_enriched_2D, k2_parameter_baseline_2D, C_parameter_2D) must be an int/float type or None"
+                        assert isinstance(k2_parameter_baseline_2D, (int, float)) or (k2_parameter_baseline_2D is None), f"k2_parameter_baseline_2D {k2_parameter_baseline_2D} and all 2d_decay_parameters (A1_parameter_2D, k1_parameter_enriched_2D, k1_parameter_baseline_2D, A2_parameter_2D, k2_parameter_enriched_2D, k2_parameter_baseline_2D, C_parameter_2D) must be an int/float type or None"
+                        assert isinstance(C_parameter_2D, (int, float)) or (C_parameter_2D is None), f"C_parameter_2D {C_parameter_2D} and all 2d_decay_parameters (A1_parameter_2D, k1_parameter_enriched_2D, k1_parameter_baseline_2D, A2_parameter_2D, k2_parameter_enriched_2D, k2_parameter_baseline_2D, C_parameter_2D) must be an int/float type or None"
 
                         K_enriched_selected = K_enriched
                         K_baseline_selected = K_baseline
@@ -1362,10 +1429,15 @@ class MillipedeInputDataExperimentalGroup:
                         a_parameter_baseline_selected = a_parameter_baseline
                         c_parameter_enriched_selected = c_parameter_enriched
                         c_parameter_baseline_selected = c_parameter_baseline
-                        A_2d_parameter_selected = A_2d_parameter
-                        k_baseline_2d_parameter_selected = k_baseline_2d_parameter
-                        k_enriched_2d_parameter_selected = k_enriched_2d_parameter
-                        C_2d_parameter_selected = C_2d_parameter
+
+                        A1_parameter_2D_selected = A1_parameter_2D
+                        k1_parameter_enriched_2D_selected = k1_parameter_enriched_2D
+                        k1_parameter_baseline_2D_selected = k1_parameter_baseline_2D
+                        A2_parameter_2D_selected = A2_parameter_2D
+                        k2_parameter_enriched_2D_selected = k2_parameter_enriched_2D
+                        k2_parameter_baseline_2D_selected = k2_parameter_baseline_2D
+                        C_parameter_2D_selected = C_parameter_2D
+
                 else:
                     # If replicate (and experiment) index is provided, get the selected sigma_scale parameters
                     K_enriched_selected = retrieve_sample_parameter(K_enriched, experiment_i, replicate_i)
@@ -1375,13 +1447,31 @@ class MillipedeInputDataExperimentalGroup:
                     c_parameter_enriched_selected = retrieve_sample_parameter(c_parameter_enriched, experiment_i, replicate_i)
                     c_parameter_baseline_selected = retrieve_sample_parameter(c_parameter_baseline, experiment_i, replicate_i)
 
-                    A_2d_parameter_selected = retrieve_sample_parameter(A_2d_parameter, experiment_i, replicate_i)
-                    k_baseline_2d_parameter_selected = retrieve_sample_parameter(k_baseline_2d_parameter, experiment_i, replicate_i)
-                    k_enriched_2d_parameter_selected = retrieve_sample_parameter(k_enriched_2d_parameter, experiment_i, replicate_i)
-                    C_2d_parameter_selected = retrieve_sample_parameter(C_2d_parameter, experiment_i, replicate_i)
+                    A1_parameter_2D_selected = retrieve_sample_parameter(A1_parameter_2D, experiment_i, replicate_i)
+                    k1_parameter_enriched_2D_selected = retrieve_sample_parameter(k1_parameter_enriched_2D, experiment_i, replicate_i)
+                    k1_parameter_baseline_2D_selected = retrieve_sample_parameter(k1_parameter_baseline_2D, experiment_i, replicate_i)
+                    A2_parameter_2D_selected = retrieve_sample_parameter(A2_parameter_2D, experiment_i, replicate_i)
+                    k2_parameter_enriched_2D_selected = retrieve_sample_parameter(k2_parameter_enriched_2D, experiment_i, replicate_i)
+                    k2_parameter_baseline_2D_selected = retrieve_sample_parameter(k2_parameter_baseline_2D, experiment_i, replicate_i)
+                    C_parameter_2D_selected = retrieve_sample_parameter(C_parameter_2D, experiment_i, replicate_i)
 
-                encoding_df = set_scale_factor(input_encoding_df=encoding_df, use_2d_decay_function=use_2d_decay_function, K_enriched_selected=K_enriched_selected, K_baseline_selected=K_baseline_selected, a_parameter_enriched_selected=a_parameter_enriched_selected, a_parameter_baseline_selected=a_parameter_baseline_selected,
-                c_parameter_enriched_selected=c_parameter_enriched_selected, c_parameter_baseline_selected=c_parameter_baseline_selected, A_2d_parameter_selected=A_2d_parameter_selected, k_baseline_2d_parameter_selected=k_baseline_2d_parameter_selected, k_enriched_2d_parameter_selected=k_enriched_2d_parameter_selected, C_2d_parameter_selected=C_2d_parameter_selected)
+
+                encoding_df = set_scale_factor(
+                                input_encoding_df=encoding_df, 
+                                use_2d_decay_function=use_2d_decay_function, 
+                                K_enriched_selected=K_enriched_selected, 
+                                K_baseline_selected=K_baseline_selected, 
+                                a_parameter_enriched_selected=a_parameter_enriched_selected, 
+                                a_parameter_baseline_selected=a_parameter_baseline_selected,
+                                c_parameter_enriched_selected=c_parameter_enriched_selected, 
+                                c_parameter_baseline_selected=c_parameter_baseline_selected, 
+                                A1_parameter_2D_selected=A1_parameter_2D_selected,
+                                k1_parameter_enriched_2D_selected=k1_parameter_enriched_2D_selected,
+                                k1_parameter_baseline_2D_selected=k1_parameter_baseline_2D_selected,
+                                A2_parameter_2D_selected=A2_parameter_2D_selected,
+                                k2_parameter_enriched_2D_selected=k2_parameter_enriched_2D_selected,
+                                k2_parameter_baseline_2D_selected=k2_parameter_baseline_2D_selected,
+                                C_parameter_2D_selected=C_parameter_2D_selected)
             
         if 'psi0' not in encoding_df.columns:
             if set_offset_as_default:
@@ -1651,7 +1741,7 @@ class MillipedeModelExperimentalGroup:
     
 
     # ---------- top-level runner to process named dataset objects ----------
-    def process_millipede_object(self, name="dataset", joint_specification_id="joint_replicate_joint_experiment_models", per_experiment_specification_id="joint_replicate_per_experiment_models", save_pdf_prefix=None, reads_threshold=100):
+    def plot_millipede_score_correlation(self, name="dataset", joint_specification_id="joint_replicate_joint_experiment_models", per_experiment_specification_id="joint_replicate_per_experiment_models", save_pdf_prefix=None, reads_threshold=100):
         # ---------- utility functions (style similar to your example) ----------
         def get_nt_columns(df):
             """Return columns that look like nucleotide-change columns (contain '>')."""

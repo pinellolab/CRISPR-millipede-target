@@ -154,22 +154,29 @@ class MillipedeCutoffSpecification:
 class MillipedeDesignMatrixProcessingSpecification:
     wt_normalization: bool = True
     total_normalization: bool = False
+    bounded_score: bool = True
     sigma_scale_normalized: bool = False
     decay_sigma_scale: bool = True
     use_2d_decay_function: bool = True
 
-    K_enriched: Union[float, List[float], List[List[float]]] = None,
-    K_baseline: Union[float, List[float], List[List[float]]] = None,
-    a_parameter_enriched: Union[float, List[float], List[List[float]]] = None,
-    a_parameter_baseline: Union[float, List[float], List[List[float]]] = None,
-    c_parameter_enriched: Union[float, List[float], List[List[float]]] = None,
-    c_parameter_baseline: Union[float, List[float], List[List[float]]] = None,
+    K_enriched: Union[float, List[float], List[List[float]]] = None
+    K_baseline: Union[float, List[float], List[List[float]]] = None
+    a_parameter_enriched: Union[float, List[float], List[List[float]]] = None
+    a_parameter_baseline: Union[float, List[float], List[List[float]]] = None
+    c_parameter_enriched: Union[float, List[float], List[List[float]]] = None
+    c_parameter_baseline: Union[float, List[float], List[List[float]]] = None
 
-    # NEW 2D decay parameters (ADDED ONLY)
-    A_2d_parameter: Union[float, List[float], List[List[float]]] = None
-    k_baseline_2d_parameter: Union[float, List[float], List[List[float]]] = None
-    k_enriched_2d_parameter: Union[float, List[float], List[List[float]]] = None
-    C_2d_parameter: Union[float, List[float], List[List[float]]] = None
+    # ----------- NEW 2D DOUBLE EXPONENTIAL PARAMETERS -----------
+    A1_parameter_2D: Union[float, List[float], List[List[float]]] = None
+    k1_parameter_enriched_2D: Union[float, List[float], List[List[float]]] = None
+    k1_parameter_baseline_2D: Union[float, List[float], List[List[float]]] = None
+
+    A2_parameter_2D: Union[float, List[float], List[List[float]]] = None
+    k2_parameter_enriched_2D: Union[float, List[float], List[List[float]]] = None
+    k2_parameter_baseline_2D: Union[float, List[float], List[List[float]]] = None
+
+    C_parameter_2D: Union[float, List[float], List[List[float]]] = None
+    # -------------------------------------------------------------
 
     set_offset_as_default: bool = False
     set_offset_as_total_reads: bool = False
@@ -182,13 +189,13 @@ class MillipedeDesignMatrixProcessingSpecification:
     def __hash__(self):
         def make_hashable(item):
             if isinstance(item, list):
-                # Recursively convert nested lists to tuples
                 return tuple(make_hashable(sub_item) for sub_item in item)
             return item
 
         return hash((
             self.wt_normalization,
             self.total_normalization,
+            self.bounded_score,
             self.sigma_scale_normalized,
             self.decay_sigma_scale,
             self.use_2d_decay_function,
@@ -200,10 +207,15 @@ class MillipedeDesignMatrixProcessingSpecification:
             make_hashable(self.c_parameter_enriched),
             make_hashable(self.c_parameter_baseline),
 
-            make_hashable(self.A_2d_parameter),
-            make_hashable(self.k_baseline_2d_parameter),
-            make_hashable(self.k_enriched_2d_parameter),
-            make_hashable(self.C_2d_parameter),
+            make_hashable(self.A1_parameter_2D),
+            make_hashable(self.k1_parameter_enriched_2D),
+            make_hashable(self.k1_parameter_baseline_2D),
+
+            make_hashable(self.A2_parameter_2D),
+            make_hashable(self.k2_parameter_enriched_2D),
+            make_hashable(self.k2_parameter_baseline_2D),
+
+            make_hashable(self.C_parameter_2D),
 
             self.set_offset_as_default,
             self.set_offset_as_total_reads,
@@ -218,10 +230,11 @@ class MillipedeDesignMatrixProcessingSpecification:
         return (
             f"wt_normalization={self.wt_normalization};"
             f"total_normalization={self.total_normalization};"
+            f"bounded_score={self.bounded_score};"
             f"sigma_scale_normalized={self.sigma_scale_normalized};"
             f"decay_sigma_scale={self.decay_sigma_scale};"
             f"use_2d_decay_function={self.use_2d_decay_function};"
-            
+
             f"K_enriched={self.K_enriched};"
             f"K_baseline={self.K_baseline};"
             f"a_parameter_enriched={self.a_parameter_enriched};"
@@ -229,10 +242,15 @@ class MillipedeDesignMatrixProcessingSpecification:
             f"c_parameter_enriched={self.c_parameter_enriched};"
             f"c_parameter_baseline={self.c_parameter_baseline};"
 
-            f"A_2d_parameter={self.A_2d_parameter};"
-            f"k_baseline_2d_parameter={self.k_baseline_2d_parameter};"
-            f"k_enriched_2d_parameter={self.k_enriched_2d_parameter};"
-            f"C_2d_parameter={self.C_2d_parameter};"
+            f"A1_parameter_2D={self.A1_parameter_2D};"
+            f"k1_parameter_enriched_2D={self.k1_parameter_enriched_2D};"
+            f"k1_parameter_baseline_2D={self.k1_parameter_baseline_2D};"
+
+            f"A2_parameter_2D={self.A2_parameter_2D};"
+            f"k2_parameter_enriched_2D={self.k2_parameter_enriched_2D};"
+            f"k2_parameter_baseline_2D={self.k2_parameter_baseline_2D};"
+
+            f"C_parameter_2D={self.C_parameter_2D};"
 
             f"set_offset_as_default={self.set_offset_as_default};"
             f"set_offset_as_total_reads={self.set_offset_as_total_reads};"

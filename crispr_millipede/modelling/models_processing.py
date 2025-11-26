@@ -35,7 +35,8 @@ def decay_function(x, k, a, c=1.0, epsilon=0.01):
     # Exponential rate constant corresponding to epsilon at decay scale a
     b = -np.log(epsilon) / a
     # Shifted exponential decay toward asymptote
-    return c + (k - c) * np.exp(-b * x)
+    decay_minimum = 1
+    return decay_minimum + c + (k - c) * np.exp(-b * x)
 
 def decay_function_2d(
     enriched_count,
@@ -87,10 +88,12 @@ def decay_function_2d(
           k2_parameter_baseline_2D * baseline_count)
     )
 
-    return term1 + term2 + C_parameter_2D
+    decay_minimum = 1
+
+    return decay_minimum + term1 + term2 + C_parameter_2D
 
 
-def __normalize_counts(encoding_df: pd.DataFrame,
+def normalize_counts(encoding_df: pd.DataFrame,
                           enriched_pop_df_reads_colname: str,
                           baseline_pop_df_reads_colname: str,
                           nucleotide_ids: List[str],
@@ -328,7 +331,7 @@ class MillipedeInputDataLoader:
 
 
     def plot_binned_reads_by_score_standard_deviation(
-            self, bounded_score=True, ymax=500, bin_width=10, figsize_width=12, figsize_height=10
+            self, bounded_score=True, ymax=500, bin_width=10, figsize_width=12, figsize_height=10, score_psuedocount = 1e-9
         ):
 
         # -----------------------------------------------------------
@@ -454,7 +457,7 @@ class MillipedeInputDataLoader:
                 nt_columns = [col for col in df.columns if ">" in col]
 
                 # normalize reads
-                df_norm = __normalize_counts(
+                df_norm = normalize_counts(
                     df,
                     self.enriched_pop_df_reads_colname,
                     self.baseline_pop_df_reads_colname,
@@ -466,12 +469,12 @@ class MillipedeInputDataLoader:
                 # LFC score = log2(high / low)
                 high_vals = df[self.enriched_pop_df_reads_colname]
                 low_vals  = df[self.baseline_pop_df_reads_colname]
-                eps = 1
+                
 
                 if bounded_score:
-                    df_norm["score"] = ( high_vals - low_vals ) / ( high_vals + low_vals + eps)
+                    df_norm["score"] = ( high_vals - low_vals ) / ( high_vals + low_vals + score_psuedocount)
                 else:
-                    df_norm["score"] = np.log2((high_vals + eps) / (low_vals + eps))
+                    df_norm["score"] = np.log2((high_vals + score_psuedocount) / (low_vals + score_psuedocount))
 
                 # binning
                 bins = np.arange(0, ymax, bin_width)
@@ -810,7 +813,7 @@ class MillipedeInputDataExperimentalGroup:
                     Perform normalization after filtering
                 '''
                 def normalize_func(merged_exp_rep_df):
-                    merged_exp_rep_normalized_df: pd.DataFrame = __normalize_counts(merged_exp_rep_df, millipede_input_data_loader.enriched_pop_df_reads_colname, millipede_input_data_loader.baseline_pop_df_reads_colname, nucleotide_ids, design_matrix_processing_specification.wt_normalization, design_matrix_processing_specification.total_normalization, millipede_input_data_loader.presort_pop_df_reads_colname) 
+                    merged_exp_rep_normalized_df: pd.DataFrame = normalize_counts(merged_exp_rep_df, millipede_input_data_loader.enriched_pop_df_reads_colname, millipede_input_data_loader.baseline_pop_df_reads_colname, nucleotide_ids, design_matrix_processing_specification.wt_normalization, design_matrix_processing_specification.total_normalization, millipede_input_data_loader.presort_pop_df_reads_colname) 
                     return merged_exp_rep_normalized_df
                 # TODO 20240808 Can implement normalization that requires all replicates "exp_merged_rep_df_list" ie size factors from Zain
                 exp_merged_rep_df_list = [normalize_func(merged_exp_rep_df) for merged_exp_rep_df in exp_merged_rep_df_list]
@@ -1035,6 +1038,7 @@ class MillipedeInputDataExperimentalGroup:
                                                        baseline_pop_df_reads_colname= millipede_input_data_loader.baseline_pop_df_reads_colname,
                                                        presort_pop_df_reads_colname=millipede_input_data_loader.presort_pop_df_reads_colname,
                                                        bounded_score=design_matrix_processing_specification.bounded_score,
+                                                       score_psuedocount=design_matrix_processing_specification.score_psuedocount,
                                                        sigma_scale_normalized= design_matrix_processing_specification.sigma_scale_normalized,
                                                        decay_sigma_scale= design_matrix_processing_specification.decay_sigma_scale,
                                                        use_2d_decay_function=design_matrix_processing_specification.use_2d_decay_function,
@@ -1188,6 +1192,7 @@ class MillipedeInputDataExperimentalGroup:
                                  baseline_pop_df_reads_colname: str,
                                  presort_pop_df_reads_colname: Optional[str],
                                  bounded_score:bool,
+                                 score_psuedocount:float,
                                  sigma_scale_normalized: bool,
                                  decay_sigma_scale: bool,
                                  use_2d_decay_function: bool,
@@ -1257,9 +1262,9 @@ class MillipedeInputDataExperimentalGroup:
         
         if 'score' not in encoding_df.columns: 
             if bounded_score:
-                encoding_df['score'] = (enriched_read_counts - baseline_read_counts) / (enriched_read_counts + baseline_read_counts) 
+                encoding_df['score'] = (enriched_read_counts - baseline_read_counts) / (enriched_read_counts + baseline_read_counts + score_psuedocount) 
             else:
-                encoding_df['score'] = np.log2( (enriched_read_counts + 1) / (baseline_read_counts + 1) )
+                encoding_df['score'] = np.log2( (enriched_read_counts + score_psuedocount) / (baseline_read_counts + score_psuedocount) )
             encoding_df = encoding_df[~encoding_df['score'].isna()] # Remove rows where score is NA (due to 0 counts)
             
         # create scale_factor for normal likelihood model

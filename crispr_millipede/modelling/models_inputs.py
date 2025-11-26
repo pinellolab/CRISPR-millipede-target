@@ -155,6 +155,7 @@ class MillipedeDesignMatrixProcessingSpecification:
     wt_normalization: bool = True
     total_normalization: bool = False
     bounded_score: bool = True
+    score_psuedocount: float = 1e-9
     sigma_scale_normalized: bool = False
     decay_sigma_scale: bool = True
     use_2d_decay_function: bool = True
@@ -196,6 +197,7 @@ class MillipedeDesignMatrixProcessingSpecification:
             self.wt_normalization,
             self.total_normalization,
             self.bounded_score,
+            self.score_psuedocount,
             self.sigma_scale_normalized,
             self.decay_sigma_scale,
             self.use_2d_decay_function,
@@ -231,6 +233,7 @@ class MillipedeDesignMatrixProcessingSpecification:
             f"wt_normalization={self.wt_normalization};"
             f"total_normalization={self.total_normalization};"
             f"bounded_score={self.bounded_score};"
+            f"score_psuedocount={self.score_psuedocount};"
             f"sigma_scale_normalized={self.sigma_scale_normalized};"
             f"decay_sigma_scale={self.decay_sigma_scale};"
             f"use_2d_decay_function={self.use_2d_decay_function};"

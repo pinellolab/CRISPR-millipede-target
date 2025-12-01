@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "crispr-millipede"
-version = "0.1.150"
+version = "0.1.152"
 description = "Calculate the enrichment scores of CRISPR alleles and variants from direct target amplicon-sequencing data using Bayesian linear regression model 'millipede'"
 authors = ["Basheer Becerra <bbecerra@fas.harvard.edu>"]
 readme = "README.md"

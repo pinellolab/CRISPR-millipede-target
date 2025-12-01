@@ -31,12 +31,12 @@ from .models_inputs import *
 
 from .pydeseq import run_pydeseq2
 
-def decay_function(x, k, a, c=1.0, epsilon=0.01):
+def decay_function(x, k, a, c=0.0, epsilon=0.01, decay_asymptote_offset = 1):
     # Exponential rate constant corresponding to epsilon at decay scale a
     b = -np.log(epsilon) / a
     # Shifted exponential decay toward asymptote
-    decay_minimum = 1
-    return decay_minimum + c + (k - c) * np.exp(-b * x)
+    c = c + decay_asymptote_offset
+    return c + (k - c) * np.exp(-b * x)
 
 def decay_function_2d(
     enriched_count,
@@ -1746,7 +1746,7 @@ class MillipedeModelExperimentalGroup:
     
 
     # ---------- top-level runner to process named dataset objects ----------
-    def plot_millipede_score_correlation(self, name="dataset", joint_specification_id="joint_replicate_joint_experiment_models", per_experiment_specification_id="joint_replicate_per_experiment_models", save_pdf_prefix=None, reads_threshold=100):
+    def plot_millipede_score_correlation(self, presort_colname: str, enriched_colname: str, baseline_colname: str, name="dataset", joint_specification_id="joint_replicate_joint_experiment_models", per_experiment_specification_id="joint_replicate_per_experiment_models", save_pdf_prefix=None, reads_threshold=100):
         # ---------- utility functions (style similar to your example) ----------
         def get_nt_columns(df):
             """Return columns that look like nucleotide-change columns (contain '>')."""
@@ -1787,17 +1787,17 @@ class MillipedeModelExperimentalGroup:
             for exp_i, rep_cols in intercept_map.items():
                 for rep_col in rep_cols:
                     mask = df[rep_col] == 1
-                    total_reads = df.loc[mask, "#Reads_Presort_raw"].sum()
+                    total_reads = df.loc[mask, presort_colname].sum()
                     if total_reads == 0:
                         abe_frac = cbe_frac = any_frac = np.nan
                     else:
-                        abe_reads = df.loc[mask, "#Reads_Presort_raw"][
+                        abe_reads = df.loc[mask, presort_colname][
                             (df.loc[mask, abe_mask_cols].sum(axis=1) > 0)
                         ].sum()
-                        cbe_reads = df.loc[mask, "#Reads_Presort_raw"][
+                        cbe_reads = df.loc[mask, presort_colname][
                             (df.loc[mask, cbe_mask_cols].sum(axis=1) > 0)
                         ].sum()
-                        any_reads = df.loc[mask, "#Reads_Presort_raw"][
+                        any_reads = df.loc[mask, presort_colname][
                             (df.loc[mask, nt_cols].sum(axis=1) > 0)
                         ].sum()
                         abe_frac = abe_reads / total_reads * 100.0
@@ -1889,7 +1889,7 @@ class MillipedeModelExperimentalGroup:
                 for allele, allele_group in grouped:
                     try:
                         # condition exactly as your original code: for all rows in allele_group the HbF reads sum > threshold
-                        cond = np.all((allele_group["#Reads_HbFHigh_raw"] + allele_group["#Reads_HbFLow_raw"]) > reads_threshold)
+                        cond = np.all((allele_group[enriched_colname] + allele_group[baseline_colname]) > reads_threshold)
                         if not cond:
                             continue
                     except Exception:

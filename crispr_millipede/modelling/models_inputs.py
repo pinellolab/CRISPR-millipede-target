@@ -155,7 +155,7 @@ class MillipedeDesignMatrixProcessingSpecification:
     wt_normalization: bool = True
     total_normalization: bool = False
     bounded_score: bool = True
-    score_psuedocount: float = 1e-9
+    score_psuedocount: float = 0
     sigma_scale_normalized: bool = False
     decay_sigma_scale: bool = True
     use_2d_decay_function: bool = True

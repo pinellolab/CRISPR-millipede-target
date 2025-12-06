@@ -140,8 +140,8 @@ def normalize_counts(encoding_df: pd.DataFrame,
             total_enriched_read_count = sum(enriched_read_counts)
             total_baseline_read_count = sum(baseline_read_counts)
             
-            enriched_read_counts = enriched_read_counts / total_enriched_read_count
-            baseline_read_counts = baseline_read_counts / total_baseline_read_count
+            enriched_read_counts = enriched_read_counts * (total_baseline_read_count / total_enriched_read_count)
+            baseline_read_counts = baseline_read_counts 
             
             # Keep raw counts:
             encoding_df[enriched_pop_df_reads_colname + "_raw"] = encoding_df[enriched_pop_df_reads_colname]
@@ -331,15 +331,32 @@ class MillipedeInputDataLoader:
 
 
     def plot_binned_reads_by_score_standard_deviation(
-            self, bounded_score=True, ymax=500, bin_width=10, figsize_width=12, figsize_height=10, score_psuedocount = 1e-9
-        ):
+        self,
+        bounded_score=True,
+        ymax=500,
+        bin_width=10,
+        figsize_width=12,
+        figsize_height=10,
+        score_psuedocount=1e-9,
+        maxfev_input=100000,
+        method=None,  # optional: curve_fit method argument
+        sigma2d_scale_max=None,  # optional: cap for sigma2d
+        use_metric="STD",  # "STD" or "MAD"
+        debug=True,
+        fill_sparse_neighbors=False,  # NEW: enable nearest-neighbor filling
+        wt_normalization_input=True,
+        total_normalization_input=False,
+    ):
 
-        # -----------------------------------------------------------
+        # -----------------------------
         # Helper: compute mean(|score|), n, SE per bin
-        # -----------------------------------------------------------
+        # -----------------------------
         def compute_mean_abs_error(df, bin_col):
             grouped = df.groupby(bin_col)['score']
-            mean_abs = grouped.apply(lambda x: np.mean(np.abs(x)))
+            if use_metric.upper() == "MAD":
+                mean_abs = grouped.apply(lambda x: np.median(np.abs(x - 0)))
+            else:  # default to STD
+                mean_abs = grouped.apply(lambda x: np.std(x))
             n = grouped.size()
             se = mean_abs / np.sqrt(n)
             return pd.DataFrame({
@@ -349,9 +366,9 @@ class MillipedeInputDataLoader:
                 "se": se.values
             })
 
-        # -----------------------------------------------------------
+        # -----------------------------
         # Helper: xtick labels "(n=123) 0–10"
-        # -----------------------------------------------------------
+        # -----------------------------
         def make_xticklabels_with_n(interval_index, n_values):
             labels = []
             for interval, n in zip(interval_index.astype(str), n_values):
@@ -360,39 +377,38 @@ class MillipedeInputDataLoader:
                 labels.append(f"(n={n}) {L.strip()}–{R.strip()}")
             return labels
 
-        # -----------------------------------------------------------
-        # Fit using binned midpoints → returns x_fit, y_fit, params
-        # -----------------------------------------------------------
+        # -----------------------------
+        # 1D exponential decay fit
+        # -----------------------------
         def exp_decay_fit_binned(x_bins, y_bins, n_bins, cap_percentile=90):
             mask = (~np.isnan(x_bins)) & (~np.isnan(y_bins))
             x = x_bins[mask]
             y = y_bins[mask]
             w = n_bins[mask]
 
-            # cap dominating bins
             cap = np.percentile(w, cap_percentile)
             w = np.minimum(w, cap)
             sigma = 1 / np.sqrt(w)
 
-            # model is A exp(-B x) + C
             def model(x, A, B, C):
                 return A * np.exp(-B * x) + C
 
             try:
-                popt, _ = curve_fit(
-                    model, x, y,
-                    sigma=sigma,
-                    absolute_sigma=True,
-                    bounds=(0, np.inf),
-                    maxfev=20000
-                )
+                fit_args = {'sigma': sigma, 'absolute_sigma': True,
+                            'bounds': (0, np.inf), 'maxfev': maxfev_input}
+                if method is not None:
+                    fit_args['method'] = method
+
+                popt, _ = curve_fit(model, x, y, **fit_args)
                 return x, model(x, *popt), popt
-            except RuntimeError:
+            except RuntimeError as e:
+                if debug:
+                    print("1D fit RuntimeError:", e)
                 return x, y, (np.nan, np.nan, np.nan)
 
-        # -----------------------------------------------------------
+        # -----------------------------
         # Convert (A, B, C) → (k, a, c)
-        # -----------------------------------------------------------
+        # -----------------------------
         def convert_params(popt, epsilon=0.01):
             A, B, C = popt
             if np.any(np.isnan(popt)):
@@ -402,9 +418,33 @@ class MillipedeInputDataLoader:
             c = C
             return k, a, c
 
-        # -----------------------------------------------------------
-        # STORAGE: nested experiment × replicate lists
-        # -----------------------------------------------------------
+        # -----------------------------
+        # Helper: fill sparse 2D bins using nearest neighbors
+        # -----------------------------
+        def fill_sparse_2d_with_neighbors(Z, weights):
+            Z_filled = Z.copy()
+            weights_filled = weights.copy()
+            rows, cols = Z.shape
+            for i in range(rows):
+                for j in range(cols):
+                    if np.isnan(Z[i,j]):
+                        neighbors = []
+                        neighbor_weights = []
+                        for di in [-1, 0, 1]:
+                            for dj in [-1, 0, 1]:
+                                ni, nj = i + di, j + dj
+                                if 0 <= ni < rows and 0 <= nj < cols and not (di == 0 and dj == 0):
+                                    if not np.isnan(Z[ni,nj]):
+                                        neighbors.append(Z[ni,nj])
+                                        neighbor_weights.append(weights[ni,nj])
+                        if len(neighbors) > 0:
+                            Z_filled[i,j] = np.mean(neighbors)
+                            weights_filled[i,j] = np.mean(neighbor_weights)
+            return Z_filled, weights_filled
+
+        # -----------------------------
+        # Storage for parameters
+        # -----------------------------
         k_parameter_enriched = []
         a_parameter_enriched = []
         c_parameter_enriched = []
@@ -423,14 +463,13 @@ class MillipedeInputDataLoader:
         kY2_parameter2D = []
         C_parameter2D = []
 
-        # -----------------------------------------------------------
-        # MAIN LOOP
-        # -----------------------------------------------------------
         unprocessed_merged_experiment_df_list_copy = []
 
+        # -----------------------------
+        # Main loop
+        # -----------------------------
         for experiment_i, unprocessed_exp_merged_rep_df_list in enumerate(self.unprocessed_merged_experiment_df_list):
-
-            # Start lists for this experiment
+            # initialize experiment lists
             k_parameter_enriched.append([])
             a_parameter_enriched.append([])
             c_parameter_enriched.append([])
@@ -452,27 +491,25 @@ class MillipedeInputDataLoader:
             unprocessed_exp_merged_rep_df_list_copy = []
 
             for replicate_i, df_raw in enumerate(unprocessed_exp_merged_rep_df_list):
-
                 df = df_raw.copy()
                 nt_columns = [col for col in df.columns if ">" in col]
 
                 # normalize reads
-                df_norm = normalize_counts(
-                    df,
-                    self.enriched_pop_df_reads_colname,
-                    self.baseline_pop_df_reads_colname,
-                    nt_columns,
-                    True,
-                    False
-                )
 
-                # LFC score = log2(high / low)
+                df_norm = normalize_counts(encoding_df=df,
+                          enriched_pop_df_reads_colname=self.enriched_pop_df_reads_colname,
+                          baseline_pop_df_reads_colname=self.baseline_pop_df_reads_colname,
+                          nucleotide_ids=nt_columns,
+                          wt_normalization=wt_normalization_input,
+                          total_normalization=total_normalization_input,
+                          presort_pop_df_reads_colname=None)
+
                 high_vals = df[self.enriched_pop_df_reads_colname]
                 low_vals  = df[self.baseline_pop_df_reads_colname]
-                
 
+                # compute score
                 if bounded_score:
-                    df_norm["score"] = ( high_vals - low_vals ) / ( high_vals + low_vals + score_psuedocount)
+                    df_norm["score"] = (high_vals - low_vals) / (high_vals + low_vals + score_psuedocount)
                 else:
                     df_norm["score"] = np.log2((high_vals + score_psuedocount) / (low_vals + score_psuedocount))
 
@@ -487,26 +524,24 @@ class MillipedeInputDataLoader:
                 enriched_mid = np.array([(iv.left + iv.right)/2 for iv in enriched_stats['enriched_bins']])
                 baseline_mid = np.array([(iv.left + iv.right)/2 for iv in baseline_stats['baseline_bins']])
 
-                # 1D FITTING
+                # -----------------------------
+                # 1D FIT
+                # -----------------------------
                 x_enr_fit, y_enr_fit, enr_params = exp_decay_fit_binned(
                     enriched_mid,
                     enriched_stats['mean_abs'].values,
-                    enriched_stats['n'].values
+                    enriched_stats['n'].values,
                 )
                 x_bas_fit, y_bas_fit, bas_params = exp_decay_fit_binned(
                     baseline_mid,
                     baseline_stats['mean_abs'].values,
-                    baseline_stats['n'].values
+                    baseline_stats['n'].values,
                 )
 
-                # SORT FOR PLOTTING
-                enr_idx = np.argsort(x_enr_fit)
-                x_enr_fit, y_enr_fit = x_enr_fit[enr_idx], y_enr_fit[enr_idx]
+                # sort for plotting
+                x_enr_fit, y_enr_fit = x_enr_fit[np.argsort(x_enr_fit)], y_enr_fit[np.argsort(x_enr_fit)]
+                x_bas_fit, y_bas_fit = x_bas_fit[np.argsort(x_bas_fit)], y_bas_fit[np.argsort(x_bas_fit)]
 
-                bas_idx = np.argsort(x_bas_fit)
-                x_bas_fit, y_bas_fit = x_bas_fit[bas_idx], y_bas_fit[bas_idx]
-
-                # STORE 1D FIT PARAMETERS
                 k_e, a_e, c_e = convert_params(enr_params)
                 k_b, a_b, c_b = convert_params(bas_params)
 
@@ -518,9 +553,11 @@ class MillipedeInputDataLoader:
                 a_parameter_baseline[experiment_i].append(a_b)
                 c_parameter_baseline[experiment_i].append(c_b)
 
-                # ---------------------------------------------------
-                # PLOTTING 1D
-                # ---------------------------------------------------
+                # -----------------------------
+                # 1D Plotting
+                # -----------------------------
+                if debug:
+                    print(f"Plotting 1D fit: Experiment {experiment_i}, Replicate {replicate_i}")
                 fig, axes = plt.subplots(2, 1, figsize=(figsize_width, figsize_height))
                 plt.subplots_adjust(hspace=0.55)
 
@@ -531,9 +568,9 @@ class MillipedeInputDataLoader:
                     fmt='o', markersize=4, capsize=3
                 )
                 axes[0].plot(x_enr_fit, y_enr_fit, color='red', linewidth=3)
-                axes[0].set_ylabel("Mean |score|")
-                axes[0].set_title(f"Smooth monotone decreasing fit (binned) vs {self.enriched_pop_df_reads_colname}\n"
-                                f"Experiment {experiment_i}, Replicate {replicate_i}", fontsize=12)
+                axes[0].set_ylabel(f"{use_metric} of score")
+                axes[0].set_title(f"Smooth monotone decreasing fit vs {self.enriched_pop_df_reads_colname}\n"
+                                f"Experiment {experiment_i}, Replicate {replicate_i}")
                 axes[0].set_xticks(enriched_mid)
                 axes[0].set_xticklabels(make_xticklabels_with_n(enriched_stats['enriched_bins'], enriched_stats['n']),
                                         rotation=45, ha='right', fontsize=6)
@@ -546,30 +583,29 @@ class MillipedeInputDataLoader:
                     fmt='o', markersize=4, capsize=3
                 )
                 axes[1].plot(x_bas_fit, y_bas_fit, color='red', linewidth=3)
-                axes[1].set_ylabel("Mean |score|")
-                axes[1].set_title(f"Smooth monotone decreasing fit (binned) vs {self.baseline_pop_df_reads_colname}\n"
-                                f"Experiment {experiment_i}, Replicate {replicate_i}", fontsize=12)
+                axes[1].set_ylabel(f"{use_metric} of score")
+                axes[1].set_title(f"Smooth monotone decreasing fit vs {self.baseline_pop_df_reads_colname}\n"
+                                f"Experiment {experiment_i}, Replicate {replicate_i}")
                 axes[1].set_xticks(baseline_mid)
                 axes[1].set_xticklabels(make_xticklabels_with_n(baseline_stats['baseline_bins'], baseline_stats['n']),
                                         rotation=45, ha='right', fontsize=6)
                 axes[1].set_xlim(0, ymax)
                 plt.show()
 
-                # ---------------------------------------------------
-                # 2D HEATMAP AND DOUBLE EXP FIT (monotone)
-                # ---------------------------------------------------
+                # -----------------------------
+                # 2D Fit
+                # -----------------------------
                 heatmap_df = df_norm[['score', 'enriched_bins', 'baseline_bins']].dropna()
                 pivot = heatmap_df.pivot_table(
                     index='baseline_bins',
                     columns='enriched_bins',
                     values='score',
-                    aggfunc=lambda x: np.std(x)
+                    aggfunc=lambda x: np.median(np.abs(x - np.median(x))) if use_metric.upper()=="MAD" else np.std(x)
                 )
 
                 enr_intervals = pivot.columns
                 bas_intervals = pivot.index
 
-                # midpoints & edges
                 enr_mid_hm = np.array([(iv.left + iv.right)/2 for iv in enr_intervals])
                 bas_mid_hm = np.array([(iv.left + iv.right)/2 for iv in bas_intervals])
                 enr_edges = np.array([iv.left for iv in enr_intervals] + [enr_intervals[-1].right])
@@ -577,45 +613,58 @@ class MillipedeInputDataLoader:
 
                 heatmap_vals_full = np.full((len(bas_mid_hm), len(enr_mid_hm)), np.nan)
                 weights2d_full = np.zeros_like(heatmap_vals_full)
+
                 for i, bi in enumerate(bas_intervals):
                     for j, ej in enumerate(enr_intervals):
                         cell = heatmap_df[(heatmap_df['baseline_bins']==bi) & (heatmap_df['enriched_bins']==ej)]
                         if len(cell) > 0:
-                            heatmap_vals_full[i,j] = np.std(cell['score'])
+                            if use_metric.upper() == "MAD":
+                                heatmap_vals_full[i,j] = np.median(np.abs(cell['score'] - np.median(cell['score'])))
+                            else:
+                                heatmap_vals_full[i,j] = np.std(cell['score'])
                             weights2d_full[i,j] = len(cell)
+
+                # -----------------------------
+                # Fill sparse neighbors if enabled
+                # -----------------------------
+                if fill_sparse_neighbors:
+                    heatmap_vals_full, weights2d_full = fill_sparse_2d_with_neighbors(heatmap_vals_full, weights2d_full)
 
                 Xf, Yf = np.meshgrid(enr_mid_hm, bas_mid_hm)
                 Zf = heatmap_vals_full
                 mask_fit = ~np.isnan(Zf)
-                X_fit2d, Y_fit2d, Z_fit2d, sigma2d = Xf[mask_fit], Yf[mask_fit], Zf[mask_fit], 1/np.sqrt(weights2d_full[mask_fit]+1e-8)
+                X_fit2d, Y_fit2d, Z_fit2d = Xf[mask_fit], Yf[mask_fit], Zf[mask_fit]
+                sigma2d = 1/np.sqrt(weights2d_full[mask_fit]+1e-8)
 
-                # double exponential, monotone
+                if sigma2d_scale_max is not None:
+                    sigma2d = np.minimum(sigma2d, sigma2d_scale_max)
+
+                # 2D double exponential
                 def double_exp2d(coords, A1, kX1, kY1, A2, kX2, kY2, C):
                     x, y = coords
-                    return (A1 * np.exp(-kX1 * x - kY1 * y) +
-                            A2 * np.exp(-kX2 * x - kY2 * y) +
-                            C)
+                    return A1*np.exp(-kX1*x - kY1*y) + A2*np.exp(-kX2*x - kY2*y) + C
 
                 p0 = [np.nanmax(Z_fit2d)/2, 0.01, 0.01, np.nanmax(Z_fit2d)/2, 0.01, 0.01, np.nanmin(Z_fit2d)]
                 lower_bounds = [0, 1e-6, 1e-6, 0, 1e-6, 1e-6, 0]
                 upper_bounds = [np.inf]*7
 
+                if debug:
+                    print(f"2D fit inputs: X_fit2d={X_fit2d}, Y_fit2d={Y_fit2d}, Z_fit2d={Z_fit2d}, sigma2d={sigma2d}")
+
                 try:
-                    popt2d, _ = curve_fit(
-                        double_exp2d,
-                        (X_fit2d, Y_fit2d),
-                        Z_fit2d,
-                        sigma=sigma2d,
-                        p0=p0,
-                        bounds=(lower_bounds, upper_bounds),
-                        maxfev=30000
-                    )
-                except RuntimeError:
+                    fit_args_2d = {'sigma': sigma2d, 'p0': p0, 'bounds': (lower_bounds, upper_bounds), 'maxfev': maxfev_input}
+                    if method is not None:
+                        fit_args_2d['method'] = method
+
+                    popt2d, _ = curve_fit(double_exp2d, (X_fit2d, Y_fit2d), Z_fit2d, **fit_args_2d)
+                except RuntimeError as e:
+                    if debug:
+                        print("2D fit RuntimeError:", e)
                     popt2d = [np.nan]*7
 
                 Z_fit_surface = double_exp2d((Xf, Yf), *popt2d)
 
-                # STORE 2D PARAMETERS
+                # store 2D parameters
                 A1_parameter2D[experiment_i].append(popt2d[0])
                 kX1_parameter2D[experiment_i].append(popt2d[1])
                 kY1_parameter2D[experiment_i].append(popt2d[2])
@@ -623,11 +672,11 @@ class MillipedeInputDataLoader:
                 kX2_parameter2D[experiment_i].append(popt2d[4])
                 kY2_parameter2D[experiment_i].append(popt2d[5])
                 C_parameter2D[experiment_i].append(popt2d[6])
-
                 k_parameter_enriched2D[experiment_i].append(popt2d[0]+popt2d[3]+popt2d[6])
                 k_parameter_baseline2D[experiment_i].append(popt2d[0]+popt2d[3]+popt2d[6])
 
-                # 2D plotting
+                if debug:
+                    print(f"Plotting 2D fit: Experiment {experiment_i}, Replicate {replicate_i}")
                 fig, ax = plt.subplots(1, 2, figsize=(14, 6))
                 cmap = plt.cm.viridis
                 cmap.set_bad(color='white')
@@ -649,9 +698,9 @@ class MillipedeInputDataLoader:
 
             unprocessed_merged_experiment_df_list_copy.append(unprocessed_exp_merged_rep_df_list_copy)
 
-        # -----------------------------------------------------------
-        # RETURN STRUCTURED DICTIONARY
-        # -----------------------------------------------------------
+        # -----------------------------
+        # Return dictionary of parameters
+        # -----------------------------
         return {
             "k_parameter_enriched": k_parameter_enriched,
             "a_parameter_enriched": a_parameter_enriched,
@@ -669,7 +718,6 @@ class MillipedeInputDataLoader:
             "k2_parameter_baseline_2D": kY2_parameter2D,
             "C_parameter_2D": C_parameter2D
         }
-
 
 
         

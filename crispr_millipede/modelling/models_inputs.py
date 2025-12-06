@@ -155,7 +155,7 @@ class MillipedeDesignMatrixProcessingSpecification:
     wt_normalization: bool = True
     total_normalization: bool = False
     bounded_score: bool = True
-    score_psuedocount: float = 1e-9
+    score_psuedocount: float = 0
     sigma_scale_normalized: bool = False
     decay_sigma_scale: bool = True
     use_2d_decay_function: bool = True
@@ -186,6 +186,10 @@ class MillipedeDesignMatrixProcessingSpecification:
     set_offset_as_presort: bool = False
     offset_normalized: bool = False
     offset_psuedocount: int = 0
+
+    # -------- ENCODING PROCESSING --------
+    remove_outliers: bool = True
+    manual_outlier_threshold: Union[float, None] = None
     
     def __hash__(self):
         def make_hashable(item):
@@ -225,7 +229,9 @@ class MillipedeDesignMatrixProcessingSpecification:
             self.set_offset_as_baseline,
             self.set_offset_as_presort,
             self.offset_normalized,
-            self.offset_psuedocount
+            self.offset_psuedocount,
+            self.remove_outliers,
+            self.manual_outlier_threshold
         ))
     
     def __str__(self):
@@ -262,6 +268,8 @@ class MillipedeDesignMatrixProcessingSpecification:
             f"set_offset_as_presort={self.set_offset_as_presort};"
             f"offset_normalized={self.offset_normalized};"
             f"offset_psuedocount={self.offset_psuedocount}"
+            f"remove_outliers={self.remove_outliers};"
+            f"manual_outlier_threshold={self.manual_outlier_threshold}"
         )
     
     def __repr__(self):

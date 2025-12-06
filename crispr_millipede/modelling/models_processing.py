@@ -6,6 +6,7 @@ from millipede import BinomialLikelihoodVariableSelector
 from millipede import NegativeBinomialLikelihoodVariableSelector
 import pandas as pd
 import warnings
+from pandas.errors import PerformanceWarning
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 import seaborn as sns
@@ -17,7 +18,7 @@ import logging
 from os.path import exists
 
 from dataclasses import dataclass
-from typing import Union, List, Mapping, Tuple, Optional
+from typing import Union, List, Mapping, Tuple, Optional, Dict
 from functools import partial
 from typeguard import typechecked
 from enum import Enum
@@ -31,12 +32,12 @@ from .models_inputs import *
 
 from .pydeseq import run_pydeseq2
 
-def decay_function(x, k, a, c=1.0, epsilon=0.01):
+def decay_function(x, k, a, c=0.0, epsilon=0.01, decay_asymptote_offset = 1):
     # Exponential rate constant corresponding to epsilon at decay scale a
     b = -np.log(epsilon) / a
     # Shifted exponential decay toward asymptote
-    decay_minimum = 1
-    return decay_minimum + c + (k - c) * np.exp(-b * x)
+    c = c + decay_asymptote_offset
+    return c + (k - c) * np.exp(-b * x)
 
 def decay_function_2d(
     enriched_count,
@@ -798,6 +799,7 @@ class MillipedeInputDataExperimentalGroup:
             # type List[List[pd.DataFrame]] if replicates are separate
             #
             merged_experiment_df_list: List[List[pd.DataFrame]] = []
+            
             # Iterate through the experiments
             for experiment_index, unprocessed_exp_merged_rep_df_list in enumerate(millipede_input_data_loader.unprocessed_merged_experiment_df_list):
                 exp_merged_rep_df_list: List[pd.DataFrame] = []
@@ -857,14 +859,17 @@ class MillipedeInputDataExperimentalGroup:
                 # De-concatenate back into separate replicate by groupby on temporary rep_i column
                 exp_merged_rep_df_list = [merged_exp_rep_df for _, merged_exp_rep_df in merged_exp_reps_df.groupby("rep_i")]
 
+
+                
+
                 '''
                     Perform normalization after filtering
                 '''
-                def normalize_func(merged_exp_rep_df):
-                    merged_exp_rep_normalized_df: pd.DataFrame = normalize_counts(merged_exp_rep_df, millipede_input_data_loader.enriched_pop_df_reads_colname, millipede_input_data_loader.baseline_pop_df_reads_colname, nucleotide_ids, design_matrix_processing_specification.wt_normalization, design_matrix_processing_specification.total_normalization, millipede_input_data_loader.presort_pop_df_reads_colname) 
-                    return merged_exp_rep_normalized_df
+                #def normalize_func(merged_exp_rep_df):
+                #    merged_exp_rep_normalized_df: pd.DataFrame = normalize_counts(merged_exp_rep_df, millipede_input_data_loader.enriched_pop_df_reads_colname, millipede_input_data_loader.baseline_pop_df_reads_colname, nucleotide_ids, design_matrix_processing_specification.wt_normalization, design_matrix_processing_specification.total_normalization, millipede_input_data_loader.presort_pop_df_reads_colname) 
+                #    return merged_exp_rep_normalized_df
                 # TODO 20240808 Can implement normalization that requires all replicates "exp_merged_rep_df_list" ie size factors from Zain
-                exp_merged_rep_df_list = [normalize_func(merged_exp_rep_df) for merged_exp_rep_df in exp_merged_rep_df_list]
+                #exp_merged_rep_df_list = [normalize_func(merged_exp_rep_df) for merged_exp_rep_df in exp_merged_rep_df_list]
                 
 
                 '''
@@ -876,6 +881,7 @@ class MillipedeInputDataExperimentalGroup:
 
                     merged_exp_reps_df: pd.DataFrame = pd.concat(exp_merged_rep_df_list).groupby(nucleotide_ids, as_index=False).sum() 
                     merged_exp_reps_df: pd.DataFrame = merged_exp_reps_df[merged_exp_reps_df["total_reads"] >= cutoff_specification.all_replicate_num_cutoff] # Filter
+
                     merged_experiment_df_list.append(merged_exp_reps_df)
 
 
@@ -888,193 +894,6 @@ class MillipedeInputDataExperimentalGroup:
                 elif replicate_merge_strategy == MillipedeReplicateMergeStrategy.SEPARATE:
                     merged_experiment_df_list.append(exp_merged_rep_df_list)
 
-                # NOTE 6/13/2024: Decided note to implement score as PYDeseq2 score, low priority
-                #elif replicate_merge_strategy == MillipedeReplicateMergeStrategy.PYDEQ:
-                #    merged_exp_reps_df: pd.DataFrame = run_pydeseq2(exp_merged_rep_df_list)
-                #    merged_experiment_df_list.append(merged_exp_reps_df)
-                
-                elif replicate_merge_strategy == MillipedeReplicateMergeStrategy.MODELLED_COMBINED:
-                    # TODO: Perform error handling. Double check that each dataframe actually has a WT column
-                    # This gets the WT allele from each replicate, as this will be used as the negative for CRISPR-Shrinkage
-                    # Set negative counts
-                    wt_allele_rep_df = [merged_rep_df[merged_rep_df[nucleotide_ids].sum(axis=1) == 0] for merged_rep_df in exp_merged_rep_df_list]
-                    
-                    # Rename the dataframe to differentiate counts between reps
-                    wt_allele_rep_df_renamed = []
-                    for rep_i, df in enumerate(wt_allele_rep_df):
-                        df = df.rename(columns={millipede_input_data_loader.enriched_pop_df_reads_colname: millipede_input_data_loader.enriched_pop_df_reads_colname+"_rep{}".format(rep_i), millipede_input_data_loader.baseline_pop_df_reads_colname: millipede_input_data_loader.baseline_pop_df_reads_colname+"_rep{}".format(rep_i)})
-                        wt_allele_rep_df_renamed.append(df)
-                    
-                    # Group by allele
-                    nucleotide_ids = [col for col in wt_allele_rep_df_renamed[0].columns if ">" in col]
-                    wt_allele_rep_df_merged = pd.concat(wt_allele_rep_df).groupby(nucleotide_ids, as_index=False).sum() # This is for the final dataframe
-                    wt_allele_rep_df_renamed_merged = pd.concat(wt_allele_rep_df_renamed).groupby(nucleotide_ids, as_index=False)
-                    
-                    
-                    
-                    negative_guides = []
-                    for index, (name, group) in enumerate(wt_allele_rep_df_renamed_merged):
-                        group_noNaN = group.fillna(0)
-                        sample_population_raw_count_reps_observation = np.asarray([group_noNaN[millipede_input_data_loader.enriched_pop_df_reads_colname+"_rep{}".format(rep_i)].sum() for rep_i in millipede_input_data_loader.reps])
-                        control_population_raw_count_reps_observation = np.asarray([group_noNaN[millipede_input_data_loader.baseline_pop_df_reads_colname+"_rep{}".format(rep_i)].sum() for rep_i in millipede_input_data_loader.reps])
-                        # TODO: Later can add more info to guide, i.e. the allele. But setting the identifer as the df index is good and possibly sufficient.
-                        guide = crispr_shrinkage.Guide(identifier="negative_{}".format(index), position=None, sample_population_raw_count_reps=sample_population_raw_count_reps_observation, control_population_raw_count_reps=control_population_raw_count_reps_observation, is_explanatory=True)
-                        negative_guides.append(guide)
-                        
-                    
-                    
-                    # Get alleles that are mutated
-                    mut_allele_rep_df = [merged_rep_df[merged_rep_df[nucleotide_ids].sum(axis=1) > 0] for merged_rep_df in exp_merged_rep_df_list]
-                    
-                    # Rename the dataframe to differentiate counts between reps
-                    mut_allele_rep_df_renamed = []
-                    for rep_i, df in enumerate(mut_allele_rep_df):
-                        df = df.rename(columns={millipede_input_data_loader.enriched_pop_df_reads_colname: millipede_input_data_loader.enriched_pop_df_reads_colname+"_rep{}".format(rep_i), millipede_input_data_loader.baseline_pop_df_reads_colname: millipede_input_data_loader.baseline_pop_df_reads_colname+"_rep{}".format(rep_i)})
-                        mut_allele_rep_df_renamed.append(df)
-                    
-                    # Group by allele
-                    nucleotide_ids = [col for col in mut_allele_rep_df_renamed[0].columns if ">" in col]
-                    mut_allele_rep_df_merged = pd.concat(mut_allele_rep_df).groupby(nucleotide_ids, as_index=False).sum()
-                    mut_allele_rep_df_renamed_merged = pd.concat(mut_allele_rep_df_renamed).groupby(nucleotide_ids, as_index=False)
-
-                    # Get counts of each replicate for each allele. In CRISPR-Shrinkage, each allele will be treated as a guide entity 
-                    observation_guides = []
-                    for index, (name, group) in enumerate(mut_allele_rep_df_renamed_merged):
-                        group_noNaN = group.fillna(0)
-                        sample_population_raw_count_reps_observation = np.asarray([group_noNaN[millipede_input_data_loader.enriched_pop_df_reads_colname+"_rep{}".format(rep_i)].sum() for rep_i in millipede_input_data_loader.reps])
-                        control_population_raw_count_reps_observation = np.asarray([group_noNaN[millipede_input_data_loader.baseline_pop_df_reads_colname+"_rep{}".format(rep_i)].sum() for rep_i in millipede_input_data_loader.reps])
-                        # TODO: Later can add more info to guide, i.e. the allele. But setting the identifer as the df index is good and possibly sufficient.
-                        guide = crispr_shrinkage.Guide(identifier="observation_{}".format(index), position=None, sample_population_raw_count_reps=sample_population_raw_count_reps_observation, control_population_raw_count_reps=control_population_raw_count_reps_observation, is_explanatory=True)
-                        observation_guides.append(guide)
-                        
-                    shrinkage_results = crispr_shrinkage.perform_adjustment(
-                        negative_control_guides = negative_guides,
-                        positive_control_guides = [],
-                        observation_guides = observation_guides,
-                        num_replicates = len(millipede_input_data_loader.reps),
-                        include_observational_guides_in_fit = shrinkage_input.include_observational_guides_in_fit,
-                        include_positive_control_guides_in_fit = shrinkage_input.include_positive_control_guides_in_fit,
-                        sample_population_scaling_factors = shrinkage_input.sample_population_scaling_factors_exp_list[experiment_index],
-                        control_population_scaling_factors = shrinkage_input.control_population_scaling_factors_exp_list[experiment_index],
-                        monte_carlo_trials = shrinkage_input.monte_carlo_trials,
-                        enable_neighborhood_prior =  False,
-                        neighborhood_bandwidth = 1,
-                        neighborhood_imputation_prior_strength = None,
-                        neighborhood_imputation_likelihood_strength = None,
-                        singleton_imputation_prior_strength = [0.006, 0.006, 0.006],#shrinkage_input.singleton_imputation_prior_strength, TODO 5/15/23: should this be uncommented?
-                        deviation_weights = shrinkage_input.deviation_weights,
-                        KL_guide_set_weights = shrinkage_input.KL_guide_set_weights,
-                        shrinkage_prior_strength = [0, 0, 0],#shrinkage_input.shrinkage_prior_strength, TODO 5/15/23: should this be uncommented?
-                        posterior_estimator = shrinkage_input.posterior_estimator,
-                        random_seed = shrinkage_input.random_seed,
-                        cores=shrinkage_input.cores,
-                        neighborhood_optimization_guide_sample_size = None
-                        )
-                    
-                        
-                    wt_allele_rep_df_merged_updated = wt_allele_rep_df_merged.copy()
-
-                    wt_allele_rep_df_merged_updated.loc[0,"score"] = shrinkage_results.adjusted_negative_control_guides[0].LFC_estimate_combined_rescaled
-                    wt_allele_rep_df_merged_updated.loc[0,"scale_factor"] = shrinkage_results.adjusted_negative_control_guides[0].LFC_estimate_combined_std_rescaled/5 + 0.0001
-
-                    mut_allele_rep_df_merged_updated = mut_allele_rep_df_merged.copy()
-                    mut_allele_rep_df_merged_updated["score"] = [observation_guide.LFC_estimate_combined_rescaled for observation_guide in shrinkage_results.adjusted_observation_guides]
-                    mut_allele_rep_df_merged_updated["scale_factor"] = [observation_guide.LFC_estimate_combined_std_rescaled/5 for observation_guide in shrinkage_results.adjusted_observation_guides]
-
-                    merged_exp_reps_df = pd.concat([wt_allele_rep_df_merged_updated, mut_allele_rep_df_merged_updated], axis=0)
-                    
-                    merged_experiment_df_list.append(merged_exp_reps_df)
-                        
-                # TODO: Any way to make more modular?
-                elif replicate_merge_strategy == MillipedeReplicateMergeStrategy.MODELLED_SEPARATE:
-                    # TODO: Perform error handling. Double check that each dataframe actually has a WT column
-                    # This gets the WT allele from each replicate, as this will be used as the negative for CRISPR-Shrinkage
-                    # Set negative counts
-                    merged_rep_df_list_updated = []
-                    for rep_i in millipede_input_data_loader.reps:
-                        merged_exp_rep_df = exp_merged_rep_df_list[rep_i]
-                        wt_allele_df = merged_exp_rep_df[merged_exp_rep_df[nucleotide_ids].sum(axis=1) == 0]
-
-                        # Rename the dataframe to differentiate counts between reps
-                        wt_allele_df_renamed = wt_allele_df.rename(columns={millipede_input_data_loader.enriched_pop_df_reads_colname: millipede_input_data_loader.enriched_pop_df_reads_colname+"_rep{}".format(rep_i), millipede_input_data_loader.baseline_pop_df_reads_colname: millipede_input_data_loader.baseline_pop_df_reads_colname+"_rep{}".format(rep_i)})
-
-                        # Group by allele
-                        nucleotide_ids = [col for col in wt_allele_df_renamed.columns if ">" in col]
-                        wt_allele_df_merged = wt_allele_df.groupby(nucleotide_ids, as_index=False).sum() # This is for the final dataframe
-                        wt_allele_df_renamed_merged = wt_allele_df_renamed.groupby(nucleotide_ids, as_index=False)
-
-
-
-                        negative_guides = []
-                        for index, (name, group) in enumerate(wt_allele_df_renamed_merged):
-                            group_noNaN = group.fillna(0)
-                            sample_population_raw_count_reps_observation = np.asarray([group_noNaN[millipede_input_data_loader.enriched_pop_df_reads_colname+"_rep{}".format(rep_i)].sum()])
-                            control_population_raw_count_reps_observation = np.asarray([group_noNaN[millipede_input_data_loader.baseline_pop_df_reads_colname+"_rep{}".format(rep_i)].sum()])
-                            # TODO: Later can add more info to guide, i.e. the allele. But setting the identifer as the df index is good and possibly sufficient.
-                            guide = crispr_shrinkage.Guide(identifier="negative_{}".format(index), position=None, sample_population_raw_count_reps=sample_population_raw_count_reps_observation, control_population_raw_count_reps=control_population_raw_count_reps_observation, is_explanatory=True)
-                            negative_guides.append(guide)
-
-
-
-                        # Get alleles that are mutated
-                        mut_allele_df = merged_exp_rep_df[merged_exp_rep_df[nucleotide_ids].sum(axis=1) > 0]
-
-                        # Rename the dataframe to differentiate counts between reps
-                        mut_allele_df_renamed = df.rename(columns={millipede_input_data_loader.enriched_pop_df_reads_colname: millipede_input_data_loader.enriched_pop_df_reads_colname+"_rep{}".format(rep_i), millipede_input_data_loader.baseline_pop_df_reads_colname: millipede_input_data_loader.baseline_pop_df_reads_colname+"_rep{}".format(rep_i)})
-
-                        # Group by allele
-                        nucleotide_ids = [col for col in mut_allele_df_renamed.columns if ">" in col]
-                        mut_allele_df_merged = mut_allele_df.groupby(nucleotide_ids, as_index=False).sum()
-                        mut_allele_df_renamed_merged = mut_allele_df_renamed.groupby(nucleotide_ids, as_index=False)
-
-                        # Get counts of each replicate for each allele. In CRISPR-Shrinkage, each allele will be treated as a guide entity 
-                        observation_guides = []
-                        for index, (name, group) in enumerate(mut_allele_df_renamed_merged):
-                            group_noNaN = group.fillna(0)
-                            sample_population_raw_count_reps_observation = np.asarray([group_noNaN[millipede_input_data_loader.enriched_pop_df_reads_colname+"_rep{}".format(rep_i)].sum()])
-                            control_population_raw_count_reps_observation = np.asarray([group_noNaN[millipede_input_data_loader.baseline_pop_df_reads_colname+"_rep{}".format(rep_i)].sum()])
-                            # TODO: Later can add more info to guide, i.e. the allele. But setting the identifer as the df index is good and possibly sufficient.
-                            guide = crispr_shrinkage.Guide(identifier="observation_{}".format(index), position=None, sample_population_raw_count_reps=sample_population_raw_count_reps_observation, control_population_raw_count_reps=control_population_raw_count_reps_observation, is_explanatory=True)
-                            observation_guides.append(guide)
-
-                        shrinkage_results = crispr_shrinkage.perform_adjustment(
-                            negative_control_guides = negative_guides,
-                            positive_control_guides = [],
-                            observation_guides = observation_guides,
-                            num_replicates = 1,
-                            include_observational_guides_in_fit = shrinkage_input.include_observational_guides_in_fit,
-                            include_positive_control_guides_in_fit = shrinkage_input.include_positive_control_guides_in_fit,
-                            sample_population_scaling_factors = shrinkage_input.sample_population_scaling_factors_exp_list[experiment_index],
-                            control_population_scaling_factors = shrinkage_input.control_population_scaling_factors_exp_list[experiment_index],
-                            monte_carlo_trials = shrinkage_input.monte_carlo_trials,
-                            enable_neighborhood_prior =  False,
-                            neighborhood_bandwidth = 1,
-                            neighborhood_imputation_prior_strength = None,
-                            neighborhood_imputation_likelihood_strength = None,
-                            singleton_imputation_prior_strength = [0.006, 0.006, 0.006],#shrinkage_input.singleton_imputation_prior_strength,
-                            deviation_weights = shrinkage_input.deviation_weights,
-                            KL_guide_set_weights = shrinkage_input.KL_guide_set_weights,
-                            shrinkage_prior_strength = [0, 0, 0],#shrinkage_input.shrinkage_prior_strength, 
-                            posterior_estimator = shrinkage_input.posterior_estimator,
-                            random_seed = shrinkage_input.random_seed,
-                            cores=shrinkage_input.cores,
-                            neighborhood_optimization_guide_sample_size = None
-                            )
-
-
-                        wt_allele_df_merged_updated = wt_allele_df_merged.copy()
-
-                        wt_allele_df_merged_updated.loc[0,"score"] = shrinkage_results.adjusted_negative_control_guides[0].LFC_estimate_combined_rescaled 
-                        wt_allele_df_merged_updated.loc[0,"scale_factor"] = shrinkage_results.adjusted_negative_control_guides[0].LFC_estimate_combined_std_rescaled/2 + 0.0001
-
-                        mut_allele_df_merged_updated = mut_allele_df_merged.copy()
-                        mut_allele_df_merged_updated["score"] = [observation_guide.LFC_estimate_combined_rescaled for observation_guide in shrinkage_results.adjusted_observation_guides]
-                        mut_allele_df_merged_updated["scale_factor"] = [observation_guide.LFC_estimate_combined_std_rescaled/2 for observation_guide in shrinkage_results.adjusted_observation_guides]
-
-                        merged_exp_reps_df = pd.concat([wt_allele_rep_df_merged_updated, mut_allele_rep_df_merged_updated], axis=0)
-                        
-                        merged_rep_df_list_updated.append(merged_exp_reps_df)
-                    merged_experiment_df_list.append(merged_rep_df_list_updated)
                 else:
                     raise Exception("Developer error: Unexpected value for MillipedeReplicateMergeStrategy: {}".format(replicate_merge_strategy))
             
@@ -1116,91 +935,381 @@ class MillipedeInputDataExperimentalGroup:
                                                        offset_psuedocount=design_matrix_processing_specification.offset_psuedocount
                                                       )
             
+            import numpy as np
+            import pandas as pd
+            import warnings
+            from pandas.errors import PerformanceWarning
+            from typing import List, Union, Optional
 
 
+            # ================================================================
+            # Collapse duplicate rows
+            # ================================================================
+            def collapse_duplicate_rows(df: pd.DataFrame, nucleotide_id_cols: List[str], label=""):
+                df = df.copy()
+                before = df.shape[0]
+
+                group_cols = nucleotide_id_cols
+                sum_cols = [c for c in df.columns if c not in group_cols]
+
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore", PerformanceWarning)
+                    df2 = df.groupby(group_cols, as_index=False)[sum_cols].sum()
+
+                after = df2.shape[0]
+                print(f"{label} collapse: {before} → {after} rows")
+                return df2.copy()
+
+
+            # ================================================================
+            # Detect outliers in a single replicate
+            # ================================================================
+            def detect_outliers_single_rep(
+                df: pd.DataFrame,
+                reads_colname: str,
+                nucleotide_id_cols: List[str],
+                manual_outlier_threshold: Optional[float] = None
+            ):
+                nt_cols_present = [c for c in nucleotide_id_cols if c in df.columns]
+
+                freqs = (
+                    df[nt_cols_present].mul(df[reads_colname], axis=0).sum(axis=0)
+                    / df[reads_colname].sum()
+                )
+
+                if manual_outlier_threshold is not None:
+                    mask_outlier = freqs >= manual_outlier_threshold
+                else:
+                    logv = np.log10(freqs + 1e-12)
+                    z = (logv - logv.mean()) / (logv.std() + 1e-12)
+                    mask_outlier = z >= 3
+
+                mask_empty = freqs == 0
+
+                return mask_outlier, mask_empty, freqs
+
+
+            # ================================================================
+            # Main function — supports df, list[df], list[list[df]]
+            # Now supports override experiment_i / replicate_i for printing
+            # ================================================================
+            def remove_outliers_across_replicates(
+                data_input: Union[pd.DataFrame, List[pd.DataFrame], List[List[pd.DataFrame]]],
+                reads_colname: str,
+                nucleotide_id_cols: List[str],
+                manual_outlier_threshold: Optional[float] = None,
+                remove_empty_features: bool = False,
+                experiment_i: Optional[int] = None,
+                replicate_i: Optional[int] = None
+            ):
+                """
+                Performs:
+                - Outlier & empty-variant detection across all replicates
+                - Removal of variants globally
+                - Collapsing of duplicate rows
+                - Supports df, list[df], list[list[df]]
+                - Supports external experiment_i / replicate_i print labeling
+                """
+
+                # ---------------------------------------------------------------
+                # Normalize input to 2D structure (experiments × replicates)
+                # ---------------------------------------------------------------
+                if isinstance(data_input, pd.DataFrame):
+                    exp_list = [[data_input]]
+                elif isinstance(data_input, list) and isinstance(data_input[0], pd.DataFrame):
+                    exp_list = [data_input]
+                else:
+                    exp_list = data_input
+
+                n_exp = len(exp_list)
+                total_reps = sum(len(r) for r in exp_list)
+
+                # Per-variant counters
+                outlier_counts_global = {c: 0 for c in nucleotide_id_cols}
+                empty_counts_global   = {c: 0 for c in nucleotide_id_cols}
+
+                outlier_counts_exp = [
+                    {c: 0 for c in nucleotide_id_cols} for _ in range(n_exp)
+                ]
+                empty_counts_exp = [
+                    {c: 0 for c in nucleotide_id_cols} for _ in range(n_exp)
+                ]
+
+                # Store frequencies for printing later
+                per_rep_freqs = {}
+
+                # ---------------------------------------------------------------
+                # Detect outliers & empty features
+                # ---------------------------------------------------------------
+                for exp_i_internal, reps in enumerate(exp_list):
+                    for rep_i_internal, df in enumerate(reps):
+                        mask_out, mask_empty, freqs = detect_outliers_single_rep(
+                            df, reads_colname, nucleotide_id_cols, manual_outlier_threshold
+                        )
+
+                        per_rep_freqs[(exp_i_internal, rep_i_internal)] = freqs
+
+                        for col in nucleotide_id_cols:
+                            if mask_out[col]:
+                                outlier_counts_global[col] += 1
+                                outlier_counts_exp[exp_i_internal][col] += 1
+
+                            if remove_empty_features and mask_empty[col]:
+                                empty_counts_global[col] += 1
+                                empty_counts_exp[exp_i_internal][col] += 1
+
+                # ---------------------------------------------------------------
+                # Determine variants to remove
+                # ---------------------------------------------------------------
+                variants_to_remove = [
+                    col for col in nucleotide_id_cols
+                    if outlier_counts_global[col] > 0 or (remove_empty_features and empty_counts_global[col] > 0)
+                ]
+
+                # ---------------------------------------------------------------
+                # PRINT SUMMARY
+                # ---------------------------------------------------------------
+                print("\n=== Outlier / Empty Variant Summary ===")
+                if variants_to_remove:
+                    for col in variants_to_remove:
+
+                        if outlier_counts_global[col] > 0:
+                            print(f"Variant {col} marked OUTLIER in total {outlier_counts_global[col]}/{total_reps} replicates")
+                            print("  Per-experiment:")
+                            for exp_i_internal in range(n_exp):
+                                print(f"    • Experiment {exp_i_internal}: "
+                                    f"{outlier_counts_exp[exp_i_internal][col]}/{len(exp_list[exp_i_internal])} replicates")
+
+                        if remove_empty_features and empty_counts_global[col] > 0:
+                            print(f"Variant {col} marked EMPTY in total {empty_counts_global[col]}/{total_reps} replicates")
+                            print("  Per-experiment:")
+                            for exp_i_internal in range(n_exp):
+                                print(f"    • Experiment {exp_i_internal}: "
+                                    f"{empty_counts_exp[exp_i_internal][col]}/{len(exp_list[exp_i_internal])} replicates")
+                else:
+                    print("No outlier or empty variants detected.")
+                print("=======================================\n")
+
+                # ---------------------------------------------------------------
+                # Remove variants globally
+                # ---------------------------------------------------------------
+                cleaned = []
+                for exp_i_internal, reps in enumerate(exp_list):
+                    new_rep_list = []
+                    for rep_i_internal, df in enumerate(reps):
+                        keep = [c for c in df.columns if c not in variants_to_remove]
+                        new_rep_list.append(df.loc[:, keep])
+                    cleaned.append(new_rep_list)
+
+                updated_nt_cols = [c for c in nucleotide_id_cols if c not in variants_to_remove]
+
+                # ---------------------------------------------------------------
+                # Collapse and print frequencies
+                # ---------------------------------------------------------------
+                collapsed = []
+                for exp_i_internal, reps in enumerate(cleaned):
+                    tmp = []
+
+                    for rep_i_internal, df in enumerate(reps):
+                        freqs = per_rep_freqs[(exp_i_internal, rep_i_internal)]
+
+                        # Build frequency print string
+                        freq_parts = []
+                        for col in variants_to_remove:
+                            if col in freqs:
+                                freq_parts.append(f"{col} {freqs[col]*100:.1f}%")
+                        freq_msg = f" ({', '.join(freq_parts)})" if freq_parts else ""
+
+                        # Determine what to print (external override vs internal index)
+                        exp_print = experiment_i if experiment_i is not None else exp_i_internal
+                        rep_print = replicate_i if replicate_i is not None else rep_i_internal
+
+                        print(f"Experiment {exp_print}, Replicate {rep_print}{freq_msg}")
+
+                        label = f"Experiment {exp_print}, Replicate {rep_print}"
+                        collapsed_df = collapse_duplicate_rows(df, updated_nt_cols, label=label)
+
+                        tmp.append(collapsed_df)
+
+                    collapsed.append(tmp)
+
+                # ---------------------------------------------------------------
+                # Return original structure
+                # ---------------------------------------------------------------
+                if isinstance(data_input, pd.DataFrame):
+                    return collapsed[0][0]
+                elif isinstance(data_input, list) and isinstance(data_input[0], pd.DataFrame):
+                    return collapsed[0]
+                else:
+                    return collapsed
+
+
+            # TODO 20240808 Can implement normalization that requires all replicates "exp_merged_rep_df_list" ie size factors from Zain
+            def normalize_func(
+                merged_exp_rep_df: Union[pd.DataFrame, List[pd.DataFrame], List[List[pd.DataFrame]]]
+            ):
+                def _norm(df: pd.DataFrame):
+                    return normalize_counts(
+                        df: pd.DataFrame,
+                        millipede_input_data_loader.enriched_pop_df_reads_colname,
+                        millipede_input_data_loader.baseline_pop_df_reads_colname,
+                        nucleotide_ids,
+                        design_matrix_processing_specification.wt_normalization,
+                        design_matrix_processing_specification.total_normalization,
+                        millipede_input_data_loader.presort_pop_df_reads_colname
+                    )
+
+                if isinstance(merged_exp_rep_df, pd.DataFrame):
+                    return _norm(merged_exp_rep_df)
+
+                if isinstance(merged_exp_rep_df, list) and all(isinstance(x, pd.DataFrame) for x in merged_exp_rep_df):
+                    return [_norm(df) for df in merged_exp_rep_df]
+
+                if isinstance(merged_exp_rep_df, list) and all(isinstance(x, list) for x in merged_exp_rep_df):
+                    return [[_norm(df) for df in rep_list] for rep_list in merged_exp_rep_df]
+
+                raise TypeError("Input must be DataFrame, List[DataFrame], or List[List[DataFrame]].")
+
+            
+            
             data = None
             if experiment_merge_strategy == MillipedeExperimentMergeStrategy.SUM:
                 nucleotide_ids = [col for col in merged_experiment_df_list[0].columns if ">" in col]
                 merged_experiments_df: pd.DataFrame
+
+                # Remove outliers prior to normalization, as outlier removal may impact normalization
+                if design_matrix_processing_specification.remove_outliers:
+                    # Remove outliers across ALL samples (across all experiments and replicates)
+                    merged_experiment_df_list = remove_outliers_across_replicates(
+                        merged_experiment_df_list,
+                        reads_colname=millipede_input_data_loader.presort_pop_df_reads_colname,
+                        nucleotide_id_cols=nucleotide_ids,
+                        manual_outlier_threshold=design_matrix_processing_specification.manual_outlier_threshold # If None, will automatically set threshold
+                        remove_empty_features=self.remove_empty_features
+                    )
+                    nucleotide_ids = [col for col in merged_experiment_df_list[0].columns if ">" in col]
+                
+                # Perform normalization prior to summing replicates, and after variant removal
+                merged_experiment_df_list = normalize_func(merged_experiment_df_list)
+
+                #Perform the experiment sum
                 merged_experiments_df = pd.concat(merged_experiment_df_list).groupby(nucleotide_ids, as_index=False).sum()
-                # Filter rows based on cutoffs
+
+                # Filter rows based on cutoffs (NOTE: 20251205 This ideally would be done before normalization, as normalization could change after filtering, but would not be efficient to recompute sum a second time pre and post filtering?)
+                
                 merged_experiments_df = merged_experiments_df[merged_experiments_df["total_reads"] >= cutoff_specification.all_experiment_num_cutoff]
                 #merged_experiments_df = merged_experiments_df[merged_experiments_df["total_reads"] > 0] # Ensure non-zero reads to prevent error during modelling
-
+                
                 merged_experiments_df = __add_supporting_columns_partial(encoding_df = merged_experiments_df)
 
-                if self.remove_empty_features:
-                    merged_experiments_df = merged_experiments_df.drop(
-                        columns=[col for col in nucleotide_ids if merged_experiments_df[col].sum() == 0]
-                    )
                 data = merged_experiments_df
             elif experiment_merge_strategy == MillipedeExperimentMergeStrategy.COVARIATE:
+
+
                 # DEVELOPER NOTE: Ensure that intercept_postfix between per-replicate and per-experiment are different, else there could be overwriting during intercept assignment
                 if replicate_merge_strategy in [MillipedeReplicateMergeStrategy.SEPARATE, MillipedeReplicateMergeStrategy.MODELLED_SEPARATE]: # SINGLE MATRIX PER REPLICATE
+                    nucleotide_ids = [col for col in merged_experiment_df_list[0][0].columns if ">" in col]
+                    
                     merged_experiment_df_list: List[List[pd.DataFrame]]
                     merged_experiments_df: List[pd.DataFrame]
+                    
+                    # Remove outliers prior to normalization, as outlier removal may impact normalization
+                    if design_matrix_processing_specification.remove_outliers:
+                        # Remove outliers across ALL samples (across all experiments and replicates)
+                        merged_experiment_df_list = remove_outliers_across_replicates(
+                            merged_experiment_df_list,
+                            reads_colname=millipede_input_data_loader.presort_pop_df_reads_colname,
+                            nucleotide_id_cols=nucleotide_ids,
+                            manual_outlier_threshold=design_matrix_processing_specification.manual_outlier_threshold,   # or None for automatic detection
+                            remove_empty_features=self.remove_empty_features
+                        )
+                        
+                    
+                    # Perform normalization prior to summing replicates, and after variant removal
+                    merged_experiment_df_list = normalize_func(merged_experiment_df_list)
+
+
                     merged_experiments_df = [pd.concat([self.__get_intercept_df(merged_experiment_df_list), pd.concat(merged_experiment_df_i, ignore_index=True)], axis=1) for merged_experiment_df_i in merged_experiment_df_list]
                     merged_experiments_df = [merged_experiments_df_i.fillna(0.0) for merged_experiments_df_i in merged_experiments_df] # TODO 20221021: This is to ensure all intercept values are assigned (since NaNs exist with covariate by experiment) - there is possible if there are other NaN among features that it will be set to 0 unintentionally
                     merged_experiments_df = [__add_supporting_columns_partial(encoding_df = merged_experiments_df_i, replicate_i=replicate_i) for replicate_i, merged_experiments_df_i in enumerate(merged_experiments_df)]
                     #merged_experiments_df = [merged_experiments_df_i[merged_experiments_df_i["total_reads"] > 0] for merged_experiments_df_i in merged_experiments_df] # Ensure non-zero reads to prevent error during modelling
                     
-                    if self.remove_empty_features:
-                        nucleotide_ids = [col for col in merged_experiments_df.columns if ">" in col]
-                        merged_experiments_df = merged_experiments_df.drop(
-                            columns=[col for col in nucleotide_ids if merged_experiments_df[col].sum() == 0]
-                        )
-                        
                     data = merged_experiments_df
                 elif replicate_merge_strategy in [MillipedeReplicateMergeStrategy.SUM, MillipedeReplicateMergeStrategy.COVARIATE, MillipedeReplicateMergeStrategy.MODELLED_COMBINED]: # SINGLE MATRIX FOR ALL REPLICATES
+                    nucleotide_ids = [col for col in merged_experiment_df_list[0].columns if ">" in col]
+
                     merged_experiment_df_list: List[pd.DataFrame]
                     merged_experiments_df: pd.DataFrame
+
+                    # Remove outliers prior to normalization, as outlier removal may impact normalization
+                    if design_matrix_processing_specification.remove_outliers:
+                        # Remove outliers across ALL samples (across all experiments and replicates)
+                        merged_experiment_df_list = remove_outliers_across_replicates(
+                            merged_experiment_df_list,
+                            reads_colname=millipede_input_data_loader.presort_pop_df_reads_colname,
+                            nucleotide_id_cols=nucleotide_ids,
+                            manual_outlier_threshold=design_matrix_processing_specification.manual_outlier_threshold,   # or None for automatic detection
+                            remove_empty_features=self.remove_empty_features
+                        )
+                    
+                    # Perform normalization prior to summing replicates, and after variant removal
+                    merged_experiment_df_list = normalize_func(merged_experiment_df_list)
+
                     merged_experiments_df = pd.concat([self.__get_intercept_df(merged_experiment_df_list), pd.concat(merged_experiment_df_list, ignore_index=True)], axis=1)
                     merged_experiments_df = merged_experiments_df.fillna(0.0) # TODO 20221021: This is to ensure all intercept values are assigned (since NaNs exist with covariate by experiment) - there is possible if there are other NaN among features that it will be set to 0 unintentionally
                     merged_experiments_df = __add_supporting_columns_partial(encoding_df = merged_experiments_df)
                     #merged_experiments_df = merged_experiments_df[merged_experiments_df["total_reads"] > 0] # Ensure non-zero reads to prevent error during modelling
 
-                    if self.remove_empty_features:
-                        nucleotide_ids = [col for col in merged_experiments_df.columns if ">" in col]
-                        merged_experiments_df = merged_experiments_df.drop(
-                            columns=[col for col in nucleotide_ids if merged_experiments_df[col].sum() == 0]
-                        )
-
                     data = merged_experiments_df
             elif experiment_merge_strategy == MillipedeExperimentMergeStrategy.SEPARATE:
+
                 if replicate_merge_strategy in [MillipedeReplicateMergeStrategy.SEPARATE, MillipedeReplicateMergeStrategy.MODELLED_SEPARATE]:
+                    nucleotide_ids = [col for col in merged_experiment_df_list[0][0].columns if ">" in col]
                     merged_experiment_df_list: List[List[pd.DataFrame]]
+
+                    # Remove outliers prior to normalization, as outlier removal may impact normalization
+                    if design_matrix_processing_specification.remove_outliers:
+                        # Remove outliers across EACH samples (across all experiments and replicates)
+                        merged_experiment_df_list = [[remove_outliers_across_replicates(
+                            merged_experiment_df,
+                            reads_colname=millipede_input_data_loader.presort_pop_df_reads_colname,
+                            nucleotide_id_cols=nucleotide_ids,
+                            manual_outlier_threshold=design_matrix_processing_specification.manual_outlier_threshold,   # or None for automatic detection
+                            remove_empty_features=self.remove_empty_features,
+                            experiment_i = experiment_i,
+                            replicate_i = replicate_i
+                        ) for replicate_i, merged_experiment_df in enumerate(merged_experiment_df_inner_list)] for experiment_i, merged_experiment_df_inner_list in enumerate(merged_experiment_df_list)]
+                    
+                    # Perform normalization prior to summing replicates, and after variant removal
+                    merged_experiment_df_list = normalize_func(merged_experiment_df_list)
+
+
                     merged_experiment_df_list = [[__add_supporting_columns_partial(encoding_df = merged_rep_df, experiment_i=experiment_i, replicate_i=replicate_i) for replicate_i, merged_rep_df in enumerate(merged_rep_df_list)] for experiment_i, merged_rep_df_list in enumerate(merged_experiment_df_list)]
                     #merged_experiment_df_list = [[merged_rep_df[merged_rep_df["total_reads"] > 0] for merged_rep_df in merged_rep_df_list] for merged_rep_df_list in merged_experiment_df_list] # Ensure non-zero reads to prevent error during modelling
 
-                    if self.remove_empty_features:
-                        merged_experiment_df_list_tmp = []
-                        for merged_experiments_df_list_inner in merged_experiment_df_list:
-                            merged_experiment_df_list_inner_tmp = []
-                            for merged_experiments_df in merged_experiments_df_list_inner:
-                                nucleotide_ids = [col for col in merged_experiments_df.columns if ">" in col]
-                                merged_experiments_df_tmp = merged_experiments_df.drop(
-                                    columns=[col for col in nucleotide_ids if merged_experiments_df[col].sum() == 0]
-                                )
-                                merged_experiment_df_list_inner_tmp.append(merged_experiments_df_tmp)
-                            merged_experiment_df_list_tmp.append(merged_experiment_df_list_inner_tmp)
-                        merged_experiment_df_list=merged_experiment_df_list_tmp
-
                     data = merged_experiment_df_list
                 elif replicate_merge_strategy in [MillipedeReplicateMergeStrategy.SUM, MillipedeReplicateMergeStrategy.COVARIATE, MillipedeReplicateMergeStrategy.MODELLED_COMBINED]:
+                    nucleotide_ids = [col for col in merged_experiment_df_list[0].columns if ">" in col]
                     merged_experiment_df_list: List[pd.DataFrame]
+                    # Remove outliers prior to normalization, as outlier removal may impact normalization
+                    if design_matrix_processing_specification.remove_outliers:
+                        # Remove outliers across EACH samples (across all experiments and replicates)
+                        merged_experiment_df_list = [remove_outliers_across_replicates(
+                            merged_experiment_df,
+                            reads_colname=millipede_input_data_loader.presort_pop_df_reads_colname,
+                            nucleotide_id_cols=nucleotide_ids,
+                            manual_outlier_threshold=design_matrix_processing_specification.manual_outlier_threshold,   # or None for automatic detection
+                            remove_empty_features=self.remove_empty_features,
+                            experiment_i = experiment_i,
+                            replicate_i = 0
+                        ) for experiment_i, merged_experiment_df in enumerate(merged_experiment_df_list)]
+                    
+                    # Perform normalization prior to summing replicates, and after variant removal
+                    merged_experiment_df_list = normalize_func(merged_experiment_df_list)
+
                     merged_experiment_df_list = [__add_supporting_columns_partial(encoding_df = merged_reps_df, experiment_i=experiment_i) for experiment_i, merged_reps_df in enumerate(merged_experiment_df_list)]
                     #merged_experiment_df_list = [merged_reps_df[merged_reps_df["total_reads"] > 0] for merged_reps_df in merged_experiment_df_list]
                     
-                    if self.remove_empty_features:
-                        merged_experiment_df_list_tmp = []
-                        for merged_experiments_df in merged_experiment_df_list:
-                            nucleotide_ids = [col for col in merged_experiments_df.columns if ">" in col]
-                            merged_experiments_df_tmp = merged_experiments_df.drop(
-                                columns=[col for col in nucleotide_ids if merged_experiments_df[col].sum() == 0]
-                            )
-                            merged_experiment_df_list_tmp.append(merged_experiments_df_tmp)
-                        merged_experiment_df_list=merged_experiment_df_list_tmp
-                        
                     data = merged_experiment_df_list
             else:
                 raise Exception("Developer error: Unexpected value for MillipedeExperimentMergeStrategy: {}".format(experiment_merge_strategy))
@@ -1794,7 +1903,7 @@ class MillipedeModelExperimentalGroup:
     
 
     # ---------- top-level runner to process named dataset objects ----------
-    def plot_millipede_score_correlation(self, name="dataset", joint_specification_id="joint_replicate_joint_experiment_models", per_experiment_specification_id="joint_replicate_per_experiment_models", save_pdf_prefix=None, reads_threshold=100):
+    def plot_millipede_score_correlation(self, presort_colname: str, enriched_colname: str, baseline_colname: str, name="dataset", joint_specification_id="joint_replicate_joint_experiment_models", per_experiment_specification_id="joint_replicate_per_experiment_models", save_pdf_prefix=None, reads_threshold=100):
         # ---------- utility functions (style similar to your example) ----------
         def get_nt_columns(df):
             """Return columns that look like nucleotide-change columns (contain '>')."""
@@ -1835,17 +1944,17 @@ class MillipedeModelExperimentalGroup:
             for exp_i, rep_cols in intercept_map.items():
                 for rep_col in rep_cols:
                     mask = df[rep_col] == 1
-                    total_reads = df.loc[mask, "#Reads_Presort_raw"].sum()
+                    total_reads = df.loc[mask, presort_colname].sum()
                     if total_reads == 0:
                         abe_frac = cbe_frac = any_frac = np.nan
                     else:
-                        abe_reads = df.loc[mask, "#Reads_Presort_raw"][
+                        abe_reads = df.loc[mask, presort_colname][
                             (df.loc[mask, abe_mask_cols].sum(axis=1) > 0)
                         ].sum()
-                        cbe_reads = df.loc[mask, "#Reads_Presort_raw"][
+                        cbe_reads = df.loc[mask, presort_colname][
                             (df.loc[mask, cbe_mask_cols].sum(axis=1) > 0)
                         ].sum()
-                        any_reads = df.loc[mask, "#Reads_Presort_raw"][
+                        any_reads = df.loc[mask, presort_colname][
                             (df.loc[mask, nt_cols].sum(axis=1) > 0)
                         ].sum()
                         abe_frac = abe_reads / total_reads * 100.0
@@ -1937,7 +2046,7 @@ class MillipedeModelExperimentalGroup:
                 for allele, allele_group in grouped:
                     try:
                         # condition exactly as your original code: for all rows in allele_group the HbF reads sum > threshold
-                        cond = np.all((allele_group["#Reads_HbFHigh_raw"] + allele_group["#Reads_HbFLow_raw"]) > reads_threshold)
+                        cond = np.all((allele_group[enriched_colname] + allele_group[baseline_colname]) > reads_threshold)
                         if not cond:
                             continue
                     except Exception:

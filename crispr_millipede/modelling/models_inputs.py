@@ -95,6 +95,7 @@ class MillipedeCutoffSpecification:
     presort_pop_per_condition_each_replicate_num_cutoff:int = 0
     presort_pop_per_condition_acceptable_rep_count:int = 0
     
+    # TODO 20251206: If rep_count is greater than the number of replicates, then all alleles will be filtered. Need to add validation to avoid this. Also add validation that the filterened encoding is not empty since it through ambiguous error. 
     baseline_pop_all_condition_each_replicate_num_cutoff:int = 0
     baseline_pop_all_condition_acceptable_rep_count:int = 0
     enriched_pop_all_condition_each_replicate_num_cutoff:int = 0

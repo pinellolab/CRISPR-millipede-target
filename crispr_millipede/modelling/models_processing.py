@@ -857,6 +857,7 @@ class MillipedeInputDataExperimentalGroup:
                     merged_exp_reps_df = merged_exp_reps_df.groupby(nucleotide_ids, as_index=False).filter(all_condition_filter_func)
 
                 # De-concatenate back into separate replicate by groupby on temporary rep_i column
+                print(merged_exp_reps_df)
                 exp_merged_rep_df_list = [merged_exp_rep_df for _, merged_exp_rep_df in merged_exp_reps_df.groupby("rep_i")]
 
 
@@ -864,8 +865,8 @@ class MillipedeInputDataExperimentalGroup:
 
                 '''
                     Perform normalization after filtering
+                    NOTE 20251205: Normalization now done after outlier removal
                 '''
-                #def normalize_func(merged_exp_rep_df):
                 #    merged_exp_rep_normalized_df: pd.DataFrame = normalize_counts(merged_exp_rep_df, millipede_input_data_loader.enriched_pop_df_reads_colname, millipede_input_data_loader.baseline_pop_df_reads_colname, nucleotide_ids, design_matrix_processing_specification.wt_normalization, design_matrix_processing_specification.total_normalization, millipede_input_data_loader.presort_pop_df_reads_colname) 
                 #    return merged_exp_rep_normalized_df
                 # TODO 20240808 Can implement normalization that requires all replicates "exp_merged_rep_df_list" ie size factors from Zain
@@ -887,6 +888,7 @@ class MillipedeInputDataExperimentalGroup:
 
                 elif replicate_merge_strategy == MillipedeReplicateMergeStrategy.COVARIATE:
                     # DEVELOPER NOTE: Ensure that intercept_postfix between per-replicate and per-experiment are different
+                    print(exp_merged_rep_df_list)
                     merged_exp_reps_df: pd.DataFrame = pd.concat([self.__get_intercept_df(exp_merged_rep_df_list, experiment_id=experiment_index), pd.concat(exp_merged_rep_df_list, ignore_index=True)], axis=1)
                     merged_experiment_df_list.append(merged_exp_reps_df)
 
@@ -935,13 +937,6 @@ class MillipedeInputDataExperimentalGroup:
                                                        offset_psuedocount=design_matrix_processing_specification.offset_psuedocount
                                                       )
             
-            import numpy as np
-            import pandas as pd
-            import warnings
-            from pandas.errors import PerformanceWarning
-            from typing import List, Union, Optional
-
-
             # ================================================================
             # Collapse duplicate rows
             # ================================================================
@@ -1146,11 +1141,11 @@ class MillipedeInputDataExperimentalGroup:
 
             # TODO 20240808 Can implement normalization that requires all replicates "exp_merged_rep_df_list" ie size factors from Zain
             def normalize_func(
-                merged_exp_rep_df: Union[pd.DataFrame, List[pd.DataFrame], List[List[pd.DataFrame]]]
+                merged_exp_rep_df: Union[pd.DataFrame, List[pd.DataFrame], List[List[pd.DataFrame]]],
+                nucleotide_ids
             ):
                 def _norm(df: pd.DataFrame):
-                    return normalize_counts(
-                        df: pd.DataFrame,
+                    return normalize_counts(df,
                         millipede_input_data_loader.enriched_pop_df_reads_colname,
                         millipede_input_data_loader.baseline_pop_df_reads_colname,
                         nucleotide_ids,
@@ -1184,13 +1179,13 @@ class MillipedeInputDataExperimentalGroup:
                         merged_experiment_df_list,
                         reads_colname=millipede_input_data_loader.presort_pop_df_reads_colname,
                         nucleotide_id_cols=nucleotide_ids,
-                        manual_outlier_threshold=design_matrix_processing_specification.manual_outlier_threshold # If None, will automatically set threshold
+                        manual_outlier_threshold=design_matrix_processing_specification.manual_outlier_threshold, # If None, will automatically set threshold
                         remove_empty_features=self.remove_empty_features
                     )
                     nucleotide_ids = [col for col in merged_experiment_df_list[0].columns if ">" in col]
                 
                 # Perform normalization prior to summing replicates, and after variant removal
-                merged_experiment_df_list = normalize_func(merged_experiment_df_list)
+                merged_experiment_df_list = normalize_func(merged_experiment_df_list, nucleotide_ids)
 
                 #Perform the experiment sum
                 merged_experiments_df = pd.concat(merged_experiment_df_list).groupby(nucleotide_ids, as_index=False).sum()
@@ -1223,11 +1218,11 @@ class MillipedeInputDataExperimentalGroup:
                             manual_outlier_threshold=design_matrix_processing_specification.manual_outlier_threshold,   # or None for automatic detection
                             remove_empty_features=self.remove_empty_features
                         )
+                        nucleotide_ids = [col for col in merged_experiment_df_list[0][0].columns if ">" in col]
                         
                     
                     # Perform normalization prior to summing replicates, and after variant removal
-                    merged_experiment_df_list = normalize_func(merged_experiment_df_list)
-
+                    merged_experiment_df_list = normalize_func(merged_experiment_df_list, nucleotide_ids)
 
                     merged_experiments_df = [pd.concat([self.__get_intercept_df(merged_experiment_df_list), pd.concat(merged_experiment_df_i, ignore_index=True)], axis=1) for merged_experiment_df_i in merged_experiment_df_list]
                     merged_experiments_df = [merged_experiments_df_i.fillna(0.0) for merged_experiments_df_i in merged_experiments_df] # TODO 20221021: This is to ensure all intercept values are assigned (since NaNs exist with covariate by experiment) - there is possible if there are other NaN among features that it will be set to 0 unintentionally
@@ -1251,9 +1246,11 @@ class MillipedeInputDataExperimentalGroup:
                             manual_outlier_threshold=design_matrix_processing_specification.manual_outlier_threshold,   # or None for automatic detection
                             remove_empty_features=self.remove_empty_features
                         )
+                        nucleotide_ids = [col for col in merged_experiment_df_list[0].columns if ">" in col]
+                        
                     
                     # Perform normalization prior to summing replicates, and after variant removal
-                    merged_experiment_df_list = normalize_func(merged_experiment_df_list)
+                    merged_experiment_df_list = normalize_func(merged_experiment_df_list, nucleotide_ids)
 
                     merged_experiments_df = pd.concat([self.__get_intercept_df(merged_experiment_df_list), pd.concat(merged_experiment_df_list, ignore_index=True)], axis=1)
                     merged_experiments_df = merged_experiments_df.fillna(0.0) # TODO 20221021: This is to ensure all intercept values are assigned (since NaNs exist with covariate by experiment) - there is possible if there are other NaN among features that it will be set to 0 unintentionally
@@ -1281,7 +1278,7 @@ class MillipedeInputDataExperimentalGroup:
                         ) for replicate_i, merged_experiment_df in enumerate(merged_experiment_df_inner_list)] for experiment_i, merged_experiment_df_inner_list in enumerate(merged_experiment_df_list)]
                     
                     # Perform normalization prior to summing replicates, and after variant removal
-                    merged_experiment_df_list = normalize_func(merged_experiment_df_list)
+                    merged_experiment_df_list = [[normalize_func(merged_experiment_df, [col for col in merged_experiment_df.columns if ">" in col]) for merged_experiment_df in merged_experiment_df_inner_list] for merged_experiment_df_inner_list in merged_experiment_df_list]
 
 
                     merged_experiment_df_list = [[__add_supporting_columns_partial(encoding_df = merged_rep_df, experiment_i=experiment_i, replicate_i=replicate_i) for replicate_i, merged_rep_df in enumerate(merged_rep_df_list)] for experiment_i, merged_rep_df_list in enumerate(merged_experiment_df_list)]
@@ -1303,9 +1300,9 @@ class MillipedeInputDataExperimentalGroup:
                             experiment_i = experiment_i,
                             replicate_i = 0
                         ) for experiment_i, merged_experiment_df in enumerate(merged_experiment_df_list)]
-                    
+
                     # Perform normalization prior to summing replicates, and after variant removal
-                    merged_experiment_df_list = normalize_func(merged_experiment_df_list)
+                    merged_experiment_df_list = [normalize_func(merged_experiment_df, [col for col in merged_experiment_df.columns if ">" in col]) for merged_experiment_df in merged_experiment_df_list]
 
                     merged_experiment_df_list = [__add_supporting_columns_partial(encoding_df = merged_reps_df, experiment_i=experiment_i) for experiment_i, merged_reps_df in enumerate(merged_experiment_df_list)]
                     #merged_experiment_df_list = [merged_reps_df[merged_reps_df["total_reads"] > 0] for merged_reps_df in merged_experiment_df_list]

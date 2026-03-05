@@ -17,6 +17,7 @@ from .utils import (
     decay_function,
     decay_function_2d,
     normalize_counts,
+    add_interaction_terms,
 )
 
 # Re-export input data classes
@@ -42,6 +43,7 @@ __all__ = [
     "decay_function",
     "decay_function_2d",
     "normalize_counts",
+    "add_interaction_terms",
     # Input Data
     "MillipedeInputDataLoader",
     "MillipedeInputDataExperimentalGroup",

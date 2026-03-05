@@ -43,7 +43,7 @@ from .models_inputs import *
 
 from .pydeseq import run_pydeseq2
 
-from .utils import normalize_counts, decay_function, decay_function_2d
+from .utils import normalize_counts, decay_function, decay_function_2d, add_interaction_terms
 
 class MillipedeInputDataLoader:
     data_directory: str
@@ -1075,6 +1075,15 @@ class MillipedeInputDataExperimentalGroup:
                 merged_experiments_df = merged_experiments_df[merged_experiments_df["total_reads"] >= cutoff_specification.all_experiment_num_cutoff]
                 #merged_experiments_df = merged_experiments_df[merged_experiments_df["total_reads"] > 0] # Ensure non-zero reads to prevent error during modelling
                 
+                # Add interaction terms if enabled
+                if design_matrix_processing_specification.include_interaction_terms:
+                    nucleotide_ids = [col for col in merged_experiments_df.columns if ">" in col]
+                    merged_experiments_df = add_interaction_terms(
+                        merged_experiments_df, 
+                        nucleotide_ids,
+                        design_matrix_processing_specification.interaction_term_coediting_frequency_threshold
+                    )
+                
                 merged_experiments_df = __add_supporting_columns_partial(encoding_df = merged_experiments_df)
 
                 data = merged_experiments_df
@@ -1106,6 +1115,17 @@ class MillipedeInputDataExperimentalGroup:
 
                     merged_experiments_df = [pd.concat([self.__get_intercept_df(merged_experiment_df_list), pd.concat(merged_experiment_df_i, ignore_index=True)], axis=1) for merged_experiment_df_i in merged_experiment_df_list]
                     merged_experiments_df = [merged_experiments_df_i.fillna(0.0) for merged_experiments_df_i in merged_experiments_df] # TODO 20221021: This is to ensure all intercept values are assigned (since NaNs exist with covariate by experiment) - there is possible if there are other NaN among features that it will be set to 0 unintentionally
+                    
+                    # Add interaction terms if enabled
+                    if design_matrix_processing_specification.include_interaction_terms:
+                        for rep_i, merged_experiments_df_i in enumerate(merged_experiments_df):
+                            nucleotide_ids_i = [col for col in merged_experiments_df_i.columns if ">" in col]
+                            merged_experiments_df[rep_i] = add_interaction_terms(
+                                merged_experiments_df_i,
+                                nucleotide_ids_i,
+                                design_matrix_processing_specification.interaction_term_coediting_frequency_threshold
+                            )
+                    
                     merged_experiments_df = [__add_supporting_columns_partial(encoding_df = merged_experiments_df_i, replicate_i=replicate_i) for replicate_i, merged_experiments_df_i in enumerate(merged_experiments_df)]
                     #merged_experiments_df = [merged_experiments_df_i[merged_experiments_df_i["total_reads"] > 0] for merged_experiments_df_i in merged_experiments_df] # Ensure non-zero reads to prevent error during modelling
                     
@@ -1134,6 +1154,16 @@ class MillipedeInputDataExperimentalGroup:
 
                     merged_experiments_df = pd.concat([self.__get_intercept_df(merged_experiment_df_list), pd.concat(merged_experiment_df_list, ignore_index=True)], axis=1)
                     merged_experiments_df = merged_experiments_df.fillna(0.0) # TODO 20221021: This is to ensure all intercept values are assigned (since NaNs exist with covariate by experiment) - there is possible if there are other NaN among features that it will be set to 0 unintentionally
+                    
+                    # Add interaction terms if enabled
+                    if design_matrix_processing_specification.include_interaction_terms:
+                        nucleotide_ids = [col for col in merged_experiments_df.columns if ">" in col]
+                        merged_experiments_df = add_interaction_terms(
+                            merged_experiments_df,
+                            nucleotide_ids,
+                            design_matrix_processing_specification.interaction_term_coediting_frequency_threshold
+                        )
+                    
                     merged_experiments_df = __add_supporting_columns_partial(encoding_df = merged_experiments_df)
                     #merged_experiments_df = merged_experiments_df[merged_experiments_df["total_reads"] > 0] # Ensure non-zero reads to prevent error during modelling
 
@@ -1160,6 +1190,16 @@ class MillipedeInputDataExperimentalGroup:
                     # Perform normalization prior to summing replicates, and after variant removal
                     merged_experiment_df_list = [[normalize_func(merged_experiment_df, [col for col in merged_experiment_df.columns if ">" in col]) for merged_experiment_df in merged_experiment_df_inner_list] for merged_experiment_df_inner_list in merged_experiment_df_list]
 
+                    # Add interaction terms if enabled
+                    if design_matrix_processing_specification.include_interaction_terms:
+                        for experiment_i, merged_rep_df_list in enumerate(merged_experiment_df_list):
+                            for replicate_i, merged_rep_df in enumerate(merged_rep_df_list):
+                                nucleotide_ids_i = [col for col in merged_rep_df.columns if ">" in col]
+                                merged_experiment_df_list[experiment_i][replicate_i] = add_interaction_terms(
+                                    merged_rep_df,
+                                    nucleotide_ids_i,
+                                    design_matrix_processing_specification.interaction_term_coediting_frequency_threshold
+                                )
 
                     merged_experiment_df_list = [[__add_supporting_columns_partial(encoding_df = merged_rep_df, experiment_i=experiment_i, replicate_i=replicate_i) for replicate_i, merged_rep_df in enumerate(merged_rep_df_list)] for experiment_i, merged_rep_df_list in enumerate(merged_experiment_df_list)]
                     #merged_experiment_df_list = [[merged_rep_df[merged_rep_df["total_reads"] > 0] for merged_rep_df in merged_rep_df_list] for merged_rep_df_list in merged_experiment_df_list] # Ensure non-zero reads to prevent error during modelling
@@ -1183,6 +1223,16 @@ class MillipedeInputDataExperimentalGroup:
 
                     # Perform normalization prior to summing replicates, and after variant removal
                     merged_experiment_df_list = [normalize_func(merged_experiment_df, [col for col in merged_experiment_df.columns if ">" in col]) for merged_experiment_df in merged_experiment_df_list]
+
+                    # Add interaction terms if enabled
+                    if design_matrix_processing_specification.include_interaction_terms:
+                        for experiment_i, merged_reps_df in enumerate(merged_experiment_df_list):
+                            nucleotide_ids_i = [col for col in merged_reps_df.columns if ">" in col]
+                            merged_experiment_df_list[experiment_i] = add_interaction_terms(
+                                merged_reps_df,
+                                nucleotide_ids_i,
+                                design_matrix_processing_specification.interaction_term_coediting_frequency_threshold
+                            )
 
                     merged_experiment_df_list = [__add_supporting_columns_partial(encoding_df = merged_reps_df, experiment_i=experiment_i) for experiment_i, merged_reps_df in enumerate(merged_experiment_df_list)]
                     #merged_experiment_df_list = [merged_reps_df[merged_reps_df["total_reads"] > 0] for merged_reps_df in merged_experiment_df_list]

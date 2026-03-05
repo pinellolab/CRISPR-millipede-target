@@ -212,3 +212,75 @@ def display_all_pickle_versions(directory, label):
         List of filenames matching the label prefix
     """
     return [f for f in listdir(directory) if isfile(join(directory, f)) and label == f[:len(label)]]
+
+
+def add_interaction_terms(df: pd.DataFrame, 
+                         nucleotide_id_cols: List[str],
+                         coediting_frequency_threshold: float = 0.1) -> pd.DataFrame:
+    """
+    Add pairwise interaction terms for variants that frequently co-occur.
+    
+    Interaction terms capture epistatic/combinatorial effects between variants by creating 
+    product features for variant pairs that co-edit above a specified frequency threshold.
+    
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Design matrix dataframe containing variant features (columns with ">")
+    nucleotide_id_cols : List[str]
+        List of column names representing individual variant features
+    coediting_frequency_threshold : float, default=0.1
+        Minimum co-editing frequency (0.0 to 1.0) required to create an interaction term.
+        Pairs of variants that co-occur in at least this fraction of alleles will get 
+        an interaction feature.
+    
+    Returns
+    -------
+    pd.DataFrame
+        Original dataframe with additional interaction term columns appended
+        
+    Notes
+    -----
+    - Interaction columns are named as "variant1_x_variant2" (lexicographically sorted)
+    - Interaction values are computed as the product of the two variant indicators
+    - Only variant pairs with co-editing frequency >= threshold are included
+    """
+    df = df.copy()
+    
+    # Extract variant columns from the dataframe
+    variant_cols = [col for col in nucleotide_id_cols if col in df.columns]
+    
+    # Convert to binary presence/absence matrix for co-occurrence calculation
+    variant_matrix = df[variant_cols].astype(bool).astype(int)
+    
+    # Compute co-editing frequencies for all pairs
+    n_alleles = len(df)
+    interaction_terms_to_add = []
+    
+    for i in range(len(variant_cols)):
+        for j in range(i + 1, len(variant_cols)):
+            var1 = variant_cols[i]
+            var2 = variant_cols[j]
+            
+            # Count alleles where both variants are present
+            coedits = (variant_matrix[var1] & variant_matrix[var2]).sum()
+            coediting_freq = coedits / n_alleles if n_alleles > 0 else 0
+            
+            # Create interaction term if above threshold
+            if coediting_freq >= coediting_frequency_threshold:
+                # Sort variant names lexicographically for consistent naming
+                sorted_vars = sorted([var1, var2])
+                interaction_name = f"{sorted_vars[0]}_x_{sorted_vars[1]}"
+                
+                # Interaction value is product of the two variant values
+                interaction_values = df[var1] * df[var2]
+                
+                interaction_terms_to_add.append((interaction_name, interaction_values))
+    
+    # Add all interaction terms to dataframe
+    for interaction_name, interaction_values in interaction_terms_to_add:
+        df[interaction_name] = interaction_values
+    
+    print(f"Added {len(interaction_terms_to_add)} interaction terms (co-editing threshold: {coediting_frequency_threshold})")
+    
+    return df

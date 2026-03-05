@@ -192,6 +192,15 @@ class MillipedeDesignMatrixProcessingSpecification:
     remove_outliers: bool = True
     manual_outlier_threshold: Union[float, None] = None
     
+    # -------- Interaction Terms ------------
+    include_interaction_terms: bool = False
+    interaction_term_coediting_frequency_threshold: float = 0.1
+
+    # -------- Priors --------
+    S: float = 1.0 # S parameter
+    tau: float = 0.01 #tau parameter
+    tau_intercept: float = 1.0e-4
+
     def __hash__(self):
         def make_hashable(item):
             if isinstance(item, list):
@@ -232,7 +241,12 @@ class MillipedeDesignMatrixProcessingSpecification:
             self.offset_normalized,
             self.offset_psuedocount,
             self.remove_outliers,
-            self.manual_outlier_threshold
+            self.manual_outlier_threshold,
+            self.include_interaction_terms,
+            self.interaction_term_coediting_frequency_threshold,
+            self.S,
+            self.tau,
+            self.tau_intercept
         ))
     
     def __str__(self):
@@ -268,9 +282,14 @@ class MillipedeDesignMatrixProcessingSpecification:
             f"set_offset_as_baseline={self.set_offset_as_baseline};"
             f"set_offset_as_presort={self.set_offset_as_presort};"
             f"offset_normalized={self.offset_normalized};"
-            f"offset_psuedocount={self.offset_psuedocount}"
+            f"offset_psuedocount={self.offset_psuedocount};"
             f"remove_outliers={self.remove_outliers};"
-            f"manual_outlier_threshold={self.manual_outlier_threshold}"
+            f"manual_outlier_threshold={self.manual_outlier_threshold};"
+            f"include_interaction_terms={self.include_interaction_terms};"
+            f"interaction_term_coediting_frequency_threshold={self.interaction_term_coediting_frequency_threshold};"
+            f"S={self.S};"
+            f"tau={self.tau};"
+            f"tau_intercept={self.tau_intercept}"
         )
     
     def __repr__(self):
@@ -288,9 +307,6 @@ class MillipedeModelSpecification:
     cutoff_specification: MillipedeCutoffSpecification
     design_matrix_processing_specification: MillipedeDesignMatrixProcessingSpecification
     shrinkage_input: Union[MillipedeShrinkageInput, None] = None
-    S: float = 1.0 #S parameter
-    tau: float = 0.01 #tau parameter
-    tau_intercept: float = 1.0e-4
     
     
     def validate_merge_strategies(self, replicate_merge_strategy: MillipedeReplicateMergeStrategy, experiment_merge_strategy:MillipedeExperimentMergeStrategy):

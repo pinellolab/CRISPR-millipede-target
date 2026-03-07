@@ -34,6 +34,7 @@ from .pydeseq import run_pydeseq2
 
 from .input_data import MillipedeInputDataExperimentalGroup
 
+@dataclass
 class MillipedeModelExperimentalGroup:
     
     experiments_inputdata: MillipedeInputDataExperimentalGroup

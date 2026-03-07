@@ -45,6 +45,7 @@ from .pydeseq import run_pydeseq2
 
 from .utils import normalize_counts, decay_function, decay_function_2d, add_interaction_terms
 
+@dataclass
 class MillipedeInputDataLoader:
     data_directory: str
     enriched_pop_fn_experiment_list: List[str]
@@ -1081,7 +1082,8 @@ class MillipedeInputDataExperimentalGroup:
                     merged_experiments_df = add_interaction_terms(
                         merged_experiments_df, 
                         nucleotide_ids,
-                        design_matrix_processing_specification.interaction_term_coediting_frequency_threshold
+                        design_matrix_processing_specification.interaction_term_coediting_frequency_threshold,
+                        read_count_colname=millipede_input_data_loader.presort_pop_df_reads_colname
                     )
                 
                 merged_experiments_df = __add_supporting_columns_partial(encoding_df = merged_experiments_df)
@@ -1123,7 +1125,8 @@ class MillipedeInputDataExperimentalGroup:
                             merged_experiments_df[rep_i] = add_interaction_terms(
                                 merged_experiments_df_i,
                                 nucleotide_ids_i,
-                                design_matrix_processing_specification.interaction_term_coediting_frequency_threshold
+                                design_matrix_processing_specification.interaction_term_coediting_frequency_threshold,
+                                read_count_colname=millipede_input_data_loader.presort_pop_df_reads_colname
                             )
                     
                     merged_experiments_df = [__add_supporting_columns_partial(encoding_df = merged_experiments_df_i, replicate_i=replicate_i) for replicate_i, merged_experiments_df_i in enumerate(merged_experiments_df)]
@@ -1161,7 +1164,8 @@ class MillipedeInputDataExperimentalGroup:
                         merged_experiments_df = add_interaction_terms(
                             merged_experiments_df,
                             nucleotide_ids,
-                            design_matrix_processing_specification.interaction_term_coediting_frequency_threshold
+                            design_matrix_processing_specification.interaction_term_coediting_frequency_threshold,
+                            read_count_colname=millipede_input_data_loader.presort_pop_df_reads_colname
                         )
                     
                     merged_experiments_df = __add_supporting_columns_partial(encoding_df = merged_experiments_df)
@@ -1198,7 +1202,8 @@ class MillipedeInputDataExperimentalGroup:
                                 merged_experiment_df_list[experiment_i][replicate_i] = add_interaction_terms(
                                     merged_rep_df,
                                     nucleotide_ids_i,
-                                    design_matrix_processing_specification.interaction_term_coediting_frequency_threshold
+                                    design_matrix_processing_specification.interaction_term_coediting_frequency_threshold,
+                                    read_count_colname=millipede_input_data_loader.presort_pop_df_reads_colname
                                 )
 
                     merged_experiment_df_list = [[__add_supporting_columns_partial(encoding_df = merged_rep_df, experiment_i=experiment_i, replicate_i=replicate_i) for replicate_i, merged_rep_df in enumerate(merged_rep_df_list)] for experiment_i, merged_rep_df_list in enumerate(merged_experiment_df_list)]
@@ -1231,7 +1236,8 @@ class MillipedeInputDataExperimentalGroup:
                             merged_experiment_df_list[experiment_i] = add_interaction_terms(
                                 merged_reps_df,
                                 nucleotide_ids_i,
-                                design_matrix_processing_specification.interaction_term_coediting_frequency_threshold
+                                design_matrix_processing_specification.interaction_term_coediting_frequency_threshold,
+                                read_count_colname=millipede_input_data_loader.presort_pop_df_reads_colname
                             )
 
                     merged_experiment_df_list = [__add_supporting_columns_partial(encoding_df = merged_reps_df, experiment_i=experiment_i) for experiment_i, merged_reps_df in enumerate(merged_experiment_df_list)]

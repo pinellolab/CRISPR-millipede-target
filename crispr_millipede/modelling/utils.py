@@ -214,25 +214,33 @@ def display_all_pickle_versions(directory, label):
     return [f for f in listdir(directory) if isfile(join(directory, f)) and label == f[:len(label)]]
 
 
-def add_interaction_terms(df: pd.DataFrame, 
+def add_interaction_terms(df: pd.DataFrame,
                          nucleotide_id_cols: List[str],
-                         coediting_frequency_threshold: float = 0.1) -> pd.DataFrame:
+                         coediting_frequency_threshold: float = 0.1,
+                         read_count_colname: Optional[str] = None) -> pd.DataFrame:
     """
-    Add pairwise interaction terms for variants that frequently co-occur.
+    Add pairwise interaction terms for variants that frequently co-edit (weighted by read counts).
     
-    Interaction terms capture epistatic/combinatorial effects between variants by creating 
+    Interaction terms capture epistatic/combinatorial effects between variants by creating
     product features for variant pairs that co-edit above a specified frequency threshold.
+    
+    Co-editing frequency is calculated as read-weighted Intersection over Union (IoU):
+        IoU = weighted_intersection / weighted_union
+    where reads are weighted by total read counts per allele. This gives higher weight to
+    abundant alleles and produces more robust co-editing estimates than unweighted counts.
     
     Parameters
     ----------
     df : pd.DataFrame
-        Design matrix dataframe containing variant features (columns with ">")
+        Design matrix dataframe containing variant features (columns with ">") and read counts
     nucleotide_id_cols : List[str]
         List of column names representing individual variant features
     coediting_frequency_threshold : float, default=0.1
-        Minimum co-editing frequency (0.0 to 1.0) required to create an interaction term.
-        Pairs of variants that co-occur in at least this fraction of alleles will get 
-        an interaction feature.
+        Minimum read-weighted co-editing frequency (0.0 to 1.0) required to create an
+        interaction term. Pairs with weighted IoU >= threshold will get an interaction feature.
+    read_count_colname : Optional[str], default=None
+        Name of the normalized read-count column to use for weighting (for example,
+        #Reads_Presort, #Reads_HbFHigh, or #Reads_HbFLow).
     
     Returns
     -------
@@ -243,18 +251,50 @@ def add_interaction_terms(df: pd.DataFrame,
     -----
     - Interaction columns are named as "variant1_x_variant2" (lexicographically sorted)
     - Interaction values are computed as the product of the two variant indicators
-    - Only variant pairs with co-editing frequency >= threshold are included
+    - Only variant pairs with read-weighted co-editing frequency >= threshold are included
+    - Co-editing frequency uses read-weighted Intersection over Union (Jaccard similarity)
     """
     df = df.copy()
     
     # Extract variant columns from the dataframe
     variant_cols = [col for col in nucleotide_id_cols if col in df.columns]
     
-    # Convert to binary presence/absence matrix for co-occurrence calculation
-    variant_matrix = df[variant_cols].astype(bool).astype(int)
+    # Determine read count column from provided variable name (normalized column only)
+    if read_count_colname is None:
+        raise ValueError(
+            "read_count_colname must be provided for read-weighted co-editing calculation."
+        )
+
+    if read_count_colname in df.columns:
+        reads_col = read_count_colname
+    else:
+        raise ValueError(
+            f"Read count column not found. Expected normalized column '{read_count_colname}' in dataframe columns."
+        )
     
-    # Compute co-editing frequencies for all pairs
-    n_alleles = len(df)
+    # Binary variant matrix and read weights
+    X = df[variant_cols].to_numpy(dtype=float)
+    w = df[reads_col].to_numpy(dtype=float)
+    
+    # Weighted intersection counts: reads containing both variant_i and variant_j
+    WX = X * w[:, None]  # Weight each variant by read count
+    intersection_counts = X.T @ WX  # Pairwise weighted intersections
+    
+    # Weighted per-variant support: reads containing each variant
+    variant_counts = WX.sum(axis=0)
+    
+    # Weighted union counts: reads containing variant_i OR variant_j
+    union_counts = variant_counts[:, None] + variant_counts[None, :] - intersection_counts
+    
+    # Pairwise co-editing frequency = weighted intersection / weighted union (IoU/Jaccard)
+    pair_freq = np.divide(
+        intersection_counts,
+        union_counts,
+        out=np.zeros_like(intersection_counts, dtype=float),
+        where=union_counts > 0,
+    )
+    
+    # Build interaction terms from pairs above threshold
     interaction_terms_to_add = []
     
     for i in range(len(variant_cols)):
@@ -262,9 +302,8 @@ def add_interaction_terms(df: pd.DataFrame,
             var1 = variant_cols[i]
             var2 = variant_cols[j]
             
-            # Count alleles where both variants are present
-            coedits = (variant_matrix[var1] & variant_matrix[var2]).sum()
-            coediting_freq = coedits / n_alleles if n_alleles > 0 else 0
+            # Get read-weighted co-editing frequency from precomputed matrix
+            coediting_freq = pair_freq[i, j]
             
             # Create interaction term if above threshold
             if coediting_freq >= coediting_frequency_threshold:
@@ -280,7 +319,9 @@ def add_interaction_terms(df: pd.DataFrame,
     # Add all interaction terms to dataframe
     for interaction_name, interaction_values in interaction_terms_to_add:
         df[interaction_name] = interaction_values
-    
-    print(f"Added {len(interaction_terms_to_add)} interaction terms (co-editing threshold: {coediting_frequency_threshold})")
+
+    print(f"Added {len(interaction_terms_to_add)} interaction terms "
+          f"(read-weighted IoU threshold: {coediting_frequency_threshold}, "
+          f"using read column: {reads_col})")
     
     return df

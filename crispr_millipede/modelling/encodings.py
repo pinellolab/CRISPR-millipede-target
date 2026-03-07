@@ -50,6 +50,7 @@ from .models_inputs import *
 
 from .pydeseq import run_pydeseq2
 
+@dataclass
 class RawEncodingDataframesExperimentalGroup:
     
     

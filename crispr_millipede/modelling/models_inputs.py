@@ -306,6 +306,9 @@ class MillipedeModelSpecification:
     experiment_merge_strategy: MillipedeExperimentMergeStrategy
     cutoff_specification: MillipedeCutoffSpecification
     design_matrix_processing_specification: MillipedeDesignMatrixProcessingSpecification
+    S: float = 1.0
+    tau: float = 0.01
+    tau_intercept: float = 1.0e-4
     shrinkage_input: Union[MillipedeShrinkageInput, None] = None
     
     

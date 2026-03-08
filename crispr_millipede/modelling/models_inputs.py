@@ -195,6 +195,9 @@ class MillipedeDesignMatrixProcessingSpecification:
     # -------- Interaction Terms ------------
     include_interaction_terms: bool = False
     interaction_term_coediting_frequency_threshold: float = 0.1
+    
+    # -------- Conditional Effects (for interaction terms) --------
+    credible_interval_quantiles: Tuple[float, float] = (0.025, 0.975)
 
     # -------- Priors --------
     S: float = 1.0 # S parameter
@@ -244,6 +247,7 @@ class MillipedeDesignMatrixProcessingSpecification:
             self.manual_outlier_threshold,
             self.include_interaction_terms,
             self.interaction_term_coediting_frequency_threshold,
+            self.credible_interval_quantiles,
             self.S,
             self.tau,
             self.tau_intercept
@@ -287,6 +291,7 @@ class MillipedeDesignMatrixProcessingSpecification:
             f"manual_outlier_threshold={self.manual_outlier_threshold};"
             f"include_interaction_terms={self.include_interaction_terms};"
             f"interaction_term_coediting_frequency_threshold={self.interaction_term_coediting_frequency_threshold};"
+            f"credible_interval_quantiles={self.credible_interval_quantiles};"
             f"S={self.S};"
             f"tau={self.tau};"
             f"tau_intercept={self.tau_intercept}"

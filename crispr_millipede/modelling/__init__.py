@@ -18,8 +18,10 @@ from .models_inputs import (MillipedeShrinkageInput,
                             MillipedeComputeDevice,
                             MillipedeDesignMatrixProcessingSpecification)
 
-from .utils import (save_or_load_pickle, 
-                    display_all_pickle_versions)
+from .utils import (save_or_load_pickle,
+                    display_all_pickle_versions,
+                    compute_conditional_effects,
+                    export_conditional_effects)
 
 from .pydeseq import (run_pydeseq2, visualize_deseq2_result)
 

@@ -325,3 +325,281 @@ def add_interaction_terms(df: pd.DataFrame,
           f"using read column: {reads_col})")
     
     return df
+
+
+def parse_interaction_term(interaction_name: str) -> tuple:
+    """
+    Parse an interaction term name into its constituent variant names.
+    
+    Parameters
+    ----------
+    interaction_name : str
+        Interaction term name in format "variant1_x_variant2" 
+        (e.g., "160A>G_x_163A>G")
+    
+    Returns
+    -------
+    tuple
+        (variant1, variant2) where variants are sorted lexicographically
+        
+    Examples
+    --------
+    >>> parse_interaction_term("160A>G_x_163A>G")
+    ('160A>G', '163A>G')
+    """
+    parts = interaction_name.split('_x_')
+    if len(parts) != 2:
+        raise ValueError(f"Invalid interaction term format: {interaction_name}. "
+                        f"Expected format: 'variant1_x_variant2'")
+    return tuple(parts)
+
+
+def compute_significance_metrics(
+    posterior_samples: np.ndarray,
+    quantiles: tuple = (0.025, 0.975)
+) -> dict:
+    """
+    Compute Bayesian significance metrics from posterior samples.
+    
+    Parameters
+    ----------
+    posterior_samples : np.ndarray
+        Array of posterior samples (length N) from MCMC iterations
+    quantiles : tuple, default=(0.025, 0.975)
+        Lower and upper quantiles for credible interval (default: 95% CI)
+    
+    Returns
+    -------
+    dict
+        Dictionary containing:
+        - posterior_mean: Mean of posterior samples
+        - posterior_sd: Standard deviation of posterior samples
+        - ci_lower: Lower bound of credible interval
+        - ci_upper: Upper bound of credible interval
+        - p_positive: P(effect > 0) - proportion of samples > 0
+        - p_negative: P(effect < 0) - proportion of samples < 0
+        - p_two_tailed: Two-tailed Bayesian p-value: 2 * min(P(>0), P(<0))
+        - probability_of_direction: max(P(>0), P(<0)) - posterior probability 
+          that effect has the estimated sign
+        - ci_excludes_zero: Boolean indicating whether credible interval 
+          excludes zero
+    """
+    # Posterior summary statistics
+    post_mean = float(np.mean(posterior_samples))
+    post_sd = float(np.std(posterior_samples, ddof=1))
+    
+    # Credible interval
+    ci_lower, ci_upper = np.quantile(posterior_samples, quantiles)
+    
+    # Tail probabilities
+    n_samples = len(posterior_samples)
+    p_positive = float(np.sum(posterior_samples > 0) / n_samples)
+    p_negative = float(np.sum(posterior_samples < 0) / n_samples)
+    
+    # Two-tailed probability (analogous to p-value)
+    p_two_tailed = 2.0 * min(p_positive, p_negative)
+    
+    # Probability of direction
+    probability_of_direction = max(p_positive, p_negative)
+    
+    # Does credible interval exclude zero?
+    ci_excludes_zero = bool((ci_lower > 0 and ci_upper > 0) or 
+                            (ci_lower < 0 and ci_upper < 0))
+    
+    return {
+        'posterior_mean': post_mean,
+        'posterior_sd': post_sd,
+        'ci_lower': float(ci_lower),
+        'ci_upper': float(ci_upper),
+        'p_positive': p_positive,
+        'p_negative': p_negative,
+        'p_two_tailed': p_two_tailed,
+        'probability_of_direction': probability_of_direction,
+        'ci_excludes_zero': ci_excludes_zero
+    }
+
+
+def compute_conditional_effects(
+    selector,
+    interaction_terms: List[str],
+    quantiles: tuple = (0.025, 0.975)
+) -> pd.DataFrame:
+    """
+    Compute conditional effect significance metrics for interaction terms.
+    
+    For each interaction term 'A_x_B' with main effects A and B:
+    1. Extract posterior samples: beta_A, beta_B, beta_AB from selector.samples
+    2. Compute conditional effects from posterior samples:
+       - beta_A_given_B = beta_A + beta_AB (effect of A when B is present)
+       - beta_B_given_A = beta_B + beta_AB (effect of B when A is present)
+    3. Compute Bayesian significance metrics for each conditional effect
+    
+    Parameters
+    ----------
+    selector : VariableSelector
+        Millipede selector object (NormalLikelihood, Binomial, or NegativeBinomial)
+        that has been run with streaming=False to store posterior samples
+    quantiles : tuple, default=(0.025, 0.975)
+        Lower and upper quantiles for credible intervals
+    interaction_terms : List[str]
+        List of interaction term names (format: "variant1_x_variant2")
+    
+    Returns
+    -------
+    pd.DataFrame
+        DataFrame with one row per conditional effect (2 rows per interaction).
+        Columns:
+        - variant_A: First variant name
+        - variant_B: Second variant name
+        - interaction_term: Full interaction term name
+        - effect_type: 'A|B=1' or 'B|A=1'
+        - posterior_mean: Mean of conditional effect posterior
+        - posterior_sd: Standard deviation of conditional effect posterior
+        - ci_lower: Lower bound of credible interval
+        - ci_upper: Upper bound of credible interval
+        - p_positive: P(conditional effect > 0)
+        - p_negative: P(conditional effect < 0)
+        - p_two_tailed: Two-tailed Bayesian significance
+        - probability_of_direction: Posterior probability effect has estimated sign
+        - ci_excludes_zero: Whether credible interval excludes zero
+    
+    Raises
+    ------
+    AttributeError
+        If selector does not have 'samples' attribute (streaming=True was used)
+    ValueError
+        If interaction term components are not found in selector.samples
+    
+    Notes
+    -----
+    Requires that the selector was run with streaming=False to retain 
+    posterior samples. The conditional effect formula follows from the 
+    linear model:
+        Y = β₀ + β_A·X_A + β_B·X_B + β_{A,B}·X_A·X_B
+    where ∂Y/∂X_A|X_B=1 = β_A + β_{A,B}
+    """
+    # Check that posterior samples are available
+    if not hasattr(selector, 'samples'):
+        raise AttributeError(
+            "Selector does not have 'samples' attribute. "
+            "Model must be run with streaming=False to compute conditional effects."
+        )
+    
+    # Millipede stores samples either as a DataFrame-like object (legacy) or as
+    # a SimpleNamespace with arrays (current versions). Normalize to a DataFrame.
+    if isinstance(selector.samples, pd.DataFrame):
+        posterior_samples = selector.samples
+    elif hasattr(selector.samples, 'beta') and hasattr(selector, 'beta'):
+        beta_names = list(selector.beta.index)
+        posterior_samples = pd.DataFrame(selector.samples.beta, columns=beta_names)
+    else:
+        raise AttributeError(
+            "Unsupported selector.samples format. Expected DataFrame or object "
+            "with 'beta' samples and selector.beta index."
+        )
+    results = []
+    
+    for interaction_term in interaction_terms:
+        # Parse interaction term to get variant names
+        try:
+            variant_A, variant_B = parse_interaction_term(interaction_term)
+        except ValueError as e:
+            print(f"Warning: Skipping invalid interaction term '{interaction_term}': {e}")
+            continue
+        
+        # Check that all necessary columns exist in posterior samples
+        missing_cols = []
+        if variant_A not in posterior_samples.columns:
+            missing_cols.append(variant_A)
+        if variant_B not in posterior_samples.columns:
+            missing_cols.append(variant_B)
+        if interaction_term not in posterior_samples.columns:
+            missing_cols.append(interaction_term)
+        
+        if missing_cols:
+            print(f"Warning: Skipping interaction '{interaction_term}' - "
+                  f"missing columns in posterior samples: {missing_cols}")
+            continue
+        
+        # Extract posterior samples for main effects and interaction
+        beta_A_samples = posterior_samples[variant_A].values
+        beta_B_samples = posterior_samples[variant_B].values
+        beta_AB_samples = posterior_samples[interaction_term].values
+        
+        # Compute conditional effects for each posterior draw
+        beta_A_given_B = beta_A_samples + beta_AB_samples
+        beta_B_given_A = beta_B_samples + beta_AB_samples
+        
+        # Compute significance metrics for A|B=1
+        metrics_A_given_B = compute_significance_metrics(beta_A_given_B, quantiles)
+        results.append({
+            'variant_A': variant_A,
+            'variant_B': variant_B,
+            'interaction_term': interaction_term,
+            'effect_type': 'A|B=1',
+            **metrics_A_given_B
+        })
+        
+        # Compute significance metrics for B|A=1
+        metrics_B_given_A = compute_significance_metrics(beta_B_given_A, quantiles)
+        results.append({
+            'variant_A': variant_B,  # Note: swap A and B for this conditional
+            'variant_B': variant_A,
+            'interaction_term': interaction_term,
+            'effect_type': 'B|A=1',
+            **metrics_B_given_A
+        })
+    
+    # Convert to DataFrame
+    if not results:
+        print("Warning: No conditional effects computed. Check interaction terms and posterior samples.")
+        return pd.DataFrame()
+    
+    df = pd.DataFrame(results)
+    
+    print(f"Computed conditional effects for {len(interaction_terms)} interaction terms "
+          f"({len(df)} conditional effects total)")
+    
+    return df
+
+
+def export_conditional_effects(
+    selector,
+    output_csv_path: Optional[str] = None,
+    interaction_terms: Optional[List[str]] = None,
+    quantiles: tuple = (0.025, 0.975),
+) -> pd.DataFrame:
+    """
+    Compute conditional effects for all interaction terms in a selector and optionally save to CSV.
+
+    Parameters
+    ----------
+    selector : VariableSelector
+        Millipede selector object fit with streaming=False.
+    output_csv_path : Optional[str], default=None
+        If provided, write the resulting DataFrame to this CSV path.
+    interaction_terms : Optional[List[str]], default=None
+        Explicit interaction terms to evaluate. If None, terms are inferred from selector.pip index.
+    quantiles : tuple, default=(0.025, 0.975)
+        Quantiles for credible interval computation.
+
+    Returns
+    -------
+    pd.DataFrame
+        Conditional-effect metrics (two rows per interaction term).
+    """
+    if interaction_terms is None:
+        if not hasattr(selector, "pip"):
+            raise AttributeError("Selector does not have 'pip' index to infer interaction terms.")
+        interaction_terms = [str(f) for f in selector.pip.index if "_x_" in str(f)]
+
+    df = compute_conditional_effects(
+        selector=selector,
+        interaction_terms=interaction_terms,
+        quantiles=quantiles,
+    )
+
+    if output_csv_path is not None and not df.empty:
+        df.to_csv(output_csv_path, index=False)
+
+    return df

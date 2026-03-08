@@ -34,6 +34,8 @@ from .pydeseq import run_pydeseq2
 
 from .input_data import MillipedeInputDataExperimentalGroup
 
+from .utils import compute_conditional_effects
+
 @dataclass
 class MillipedeModelExperimentalGroup:
     
@@ -132,6 +134,14 @@ class MillipedeModelExperimentalGroup:
         nucleotide_ids = [col for col in full_data_design_matrix.columns if ">" in col] # TODO 20221021 - There needs to be a better way at specifying what the features are
         intercept_columns = [col for col in full_data_design_matrix.columns if "intercept_" in col] 
         model_types: List[MillipedeModelType]= millipede_model_specification.model_types
+        
+        # Check if interaction terms are included
+        include_interactions = millipede_model_specification.design_matrix_processing_specification.include_interaction_terms
+        # Identify interaction columns (contain '_x_')
+        interaction_cols = [col for col in nucleotide_ids if '_x_' in col] if include_interactions else []
+        # Get credible interval quantiles
+        quantiles = millipede_model_specification.design_matrix_processing_specification.credible_interval_quantiles
+        
         # Iterate through all model types and inference mdoel
         S = millipede_model_specification.S
         tau = millipede_model_specification.tau
@@ -155,7 +165,19 @@ class MillipedeModelExperimentalGroup:
                                                                    device=device.value)
 
                 print("Running model {}".format(model_type.value))
-                normal_selector.run(T=5000, T_burnin=500, verbosity='bar', seed=0)
+                normal_selector.run(T=5000, T_burnin=500, verbosity='bar', seed=0, streaming=not include_interactions)
+                
+                # Compute conditional effects if interaction terms are included
+                if include_interactions and len(interaction_cols) > 0:
+                    print(f"Computing conditional effects for {len(interaction_cols)} interaction terms...")
+                    conditional_effects_df = compute_conditional_effects(
+                        selector=normal_selector,
+                        interaction_terms=interaction_cols,
+                        quantiles=quantiles
+                    )
+                    # Attach conditional effects to selector
+                    normal_selector.conditional_effects = conditional_effects_df
+                
                 models[model_type] = normal_selector
 
             elif model_type == MillipedeModelType.NORMAL_SIGMA_SCALED:
@@ -175,7 +197,19 @@ class MillipedeModelExperimentalGroup:
                                                                                 device=device.value)
 
                 print("Running model {}".format(model_type.value))
-                normal_sigma_scaled_selector.run(T=5000, T_burnin=500, verbosity='bar', seed=0)
+                normal_sigma_scaled_selector.run(T=5000, T_burnin=500, verbosity='bar', seed=0, streaming=not include_interactions)
+                
+                # Compute conditional effects if interaction terms are included
+                if include_interactions and len(interaction_cols) > 0:
+                    print(f"Computing conditional effects for {len(interaction_cols)} interaction terms...")
+                    conditional_effects_df = compute_conditional_effects(
+                        selector=normal_sigma_scaled_selector,
+                        interaction_terms=interaction_cols,
+                        quantiles=quantiles
+                    )
+                    # Attach conditional effects to selector
+                    normal_sigma_scaled_selector.conditional_effects = conditional_effects_df
+                
                 models[model_type] = normal_sigma_scaled_selector
 
             elif model_type == MillipedeModelType.BINOMIAL:
@@ -193,7 +227,19 @@ class MillipedeModelExperimentalGroup:
                                                                        device=device.value)
 
                 print("Running model {}".format(model_type.value))
-                binomial_selector.run(T=5000, T_burnin=500, verbosity='bar', seed=0)
+                binomial_selector.run(T=5000, T_burnin=500, verbosity='bar', seed=0, streaming=not include_interactions)
+                
+                # Compute conditional effects if interaction terms are included
+                if include_interactions and len(interaction_cols) > 0:
+                    print(f"Computing conditional effects for {len(interaction_cols)} interaction terms...")
+                    conditional_effects_df = compute_conditional_effects(
+                        selector=binomial_selector,
+                        interaction_terms=interaction_cols,
+                        quantiles=quantiles
+                    )
+                    # Attach conditional effects to selector
+                    binomial_selector.conditional_effects = conditional_effects_df
+                
                 models[model_type] = binomial_selector
 
             elif model_type == MillipedeModelType.NEGATIVE_BINOMIAL:
@@ -211,7 +257,19 @@ class MillipedeModelExperimentalGroup:
                                                                        device=device.value)
 
                 print("Running model {}".format(model_type.value))
-                negative_binomial_selector.run(T=5000, T_burnin=500, verbosity='bar', seed=0)
+                negative_binomial_selector.run(T=5000, T_burnin=500, verbosity='bar', seed=0, streaming=not include_interactions)
+                
+                # Compute conditional effects if interaction terms are included
+                if include_interactions and len(interaction_cols) > 0:
+                    print(f"Computing conditional effects for {len(interaction_cols)} interaction terms...")
+                    conditional_effects_df = compute_conditional_effects(
+                        selector=negative_binomial_selector,
+                        interaction_terms=interaction_cols,
+                        quantiles=quantiles
+                    )
+                    # Attach conditional effects to selector
+                    negative_binomial_selector.conditional_effects = conditional_effects_df
+                
                 models[model_type] = negative_binomial_selector
             else:
                 logging.warning("Unsupported MillipedeModelType '{}', perhaps use a different supported model type".format(model_type))
